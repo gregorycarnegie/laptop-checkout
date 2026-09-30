@@ -814,6 +814,8 @@ mod tests {
     #[rstest]
     fn email_purpose_matches_the_loan(mut loan: Loan) {
         assert_eq!(email_purpose(&loan, now()), "overdue");
+        loan.due_at = now();
+        assert_eq!(email_purpose(&loan, now()), "reminder", "not late at the due instant");
         loan.due_at = now() + DAY;
         assert_eq!(email_purpose(&loan, now()), "reminder");
         loan.due_at = now() - DAY;
