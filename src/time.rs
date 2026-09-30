@@ -192,9 +192,21 @@ pub fn local(ms: i64) -> Local {
 }
 
 /// Converts local wall-clock milliseconds to a UTC instant.
+///
+/// Around a clock change a wall time can happen twice (clocks go back: the
+/// first one is used) or not at all (clocks go forward: the moment the clocks
+/// jump is used), matching JavaScript's `Date`.
 fn from_wall(wall: i64) -> i64 {
-    let guess = wall - offset(wall);
-    wall - offset(guess)
+    // The offsets in force a day either side cover any change that day.
+    let early = offset(wall - DAY);
+    let late = offset(wall + DAY);
+    for o in [early, late] {
+        let t = wall - o;
+        if t + offset(t) == wall {
+            return t;
+        }
+    }
+    wall - early.min(late)
 }
 
 pub fn start_of_day(ms: i64) -> i64 {
@@ -442,6 +454,38 @@ mod tests {
         let end = end_of_day(at(2026, 3, 29, 12, 0));
         assert_eq!(end, at(2026, 3, 29, 22, 59) + 59 * SECOND);
         assert_eq!(start_of_day(at(2026, 3, 29, 12, 0)), at(2026, 3, 29, 0, 0));
+    }
+
+    #[test]
+    fn a_day_that_starts_with_the_clocks_going_forward_starts_when_they_jump() {
+        // Brazil once put clocks forward at midnight: 00:00 BRT (UTC-3) became 01:00 (UTC-2).
+        let jump = at(2018, 11, 4, 3, 0);
+        clock::set_zone_change(jump, -3 * HOUR, -2 * HOUR);
+        let start = start_of_day(at(2018, 11, 4, 15, 0));
+        assert_eq!(start, jump);
+        assert_eq!(local(start).day, 4);
+        assert_eq!(local(start - 1).day, 3);
+    }
+
+    #[test]
+    fn a_time_skipped_by_the_clocks_moves_forward() {
+        // UK: 01:00 local jumps to 02:00, so 01:30 doesn't exist and reads as 02:30.
+        clock::set_zone_change(at(2026, 3, 29, 1, 0), 0, HOUR);
+        let t = from_wall(at(2026, 3, 29, 1, 30));
+        assert_eq!((local(t).hour, local(t).minute), (2, 30));
+    }
+
+    #[test]
+    fn a_time_that_happens_twice_uses_the_first() {
+        // UK: 02:00 BST goes back to 01:00 GMT, so 01:30 happens twice.
+        clock::set_zone_change(at(2026, 10, 25, 1, 0), HOUR, 0);
+        assert_eq!(from_wall(at(2026, 10, 25, 1, 30)), at(2026, 10, 25, 0, 30));
+    }
+
+    #[test]
+    fn end_of_day_is_right_after_the_clocks_go_back() {
+        clock::set_zone_change(at(2026, 10, 25, 1, 0), HOUR, 0);
+        assert_eq!(end_of_day(at(2026, 10, 25, 12, 0)), at(2026, 10, 25, 23, 59) + 59 * SECOND);
     }
 
     #[test]
