@@ -8,8 +8,8 @@ Install Rust 1.88 or newer, a C/C++ compiler for native SQLite builds, and
 LLVM/Clang on `PATH` for WebAssembly builds (see [setup](README.md#development)), then:
 
 ```sh
-git clone https://github.com/gregorycarnegie/laptop-checkout.git
-cd laptop-checkout
+git clone https://github.com/gregorycarnegie/laptop-library.git
+cd laptop-library
 rustup target add wasm32-unknown-unknown
 cargo install trunk --locked
 trunk serve --open
@@ -40,7 +40,7 @@ For user-visible changes, add an entry under **Unreleased** in [CHANGELOG.md](CH
 
 ## Report a problem
 
-[Open an issue](https://github.com/gregorycarnegie/laptop-checkout/issues) with
+[Open an issue](https://github.com/gregorycarnegie/laptop-library/issues) with
 reproduction steps, expected and actual behaviour, and your browser and operating
 system. Use fictional borrowers and asset tags; do not attach real personal data
 or an unredacted database backup.

@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to Laptop Checkout are recorded here.
+Notable changes to Laptop Library are recorded here.
 
 ## Unreleased
 
@@ -15,4 +15,4 @@ Notable changes to Laptop Checkout are recorded here.
   wasm-bindgen, fake, mockall and rstest.
 
 Earlier development history is available in the
-[commit log](https://github.com/gregorycarnegie/laptop-checkout/commits/main/).
+[commit log](https://github.com/gregorycarnegie/laptop-library/commits/main/).

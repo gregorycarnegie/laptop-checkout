@@ -1,7 +1,7 @@
-# Laptop Checkout
+# Laptop Library
 
-[![Tests](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/tests.yml/badge.svg)](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/tests.yml)
-[![GitHub Pages](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/pages.yml/badge.svg)](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/pages.yml)
+[![Tests](https://github.com/gregorycarnegie/laptop-library/actions/workflows/tests.yml/badge.svg)](https://github.com/gregorycarnegie/laptop-library/actions/workflows/tests.yml)
+[![GitHub Pages](https://github.com/gregorycarnegie/laptop-library/actions/workflows/pages.yml/badge.svg)](https://github.com/gregorycarnegie/laptop-library/actions/workflows/pages.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Built with Rust](https://img.shields.io/badge/Built_with-Rust-dea584.svg)](https://www.rust-lang.org/)
 
@@ -9,7 +9,7 @@ Manage laptop loans, borrowers and inventory in your browser, with barcode scann
 due dates, overdue reminders and CSV imports. Built for a simple circulation desk,
 with local SQLite storage and no backend to set up.
 
-[Open the app](https://gregorycarnegie.github.io/laptop-checkout/) ·
+[Open the app](https://gregorycarnegie.github.io/laptop-library/) ·
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
 The app uses [Leptos](https://leptos.dev)
