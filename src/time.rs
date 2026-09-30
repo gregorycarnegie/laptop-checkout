@@ -73,12 +73,12 @@ mod platform {
 /// A controllable clock for native builds (tests). Each test thread has its own.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod clock {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
 
     thread_local! {
         static NOW: Cell<Option<i64>> = const { Cell::new(None) };
-        /// (switch instant, offset before, offset after), to model daylight saving.
-        static ZONE: Cell<(i64, i64, i64)> = const { Cell::new((0, 0, 0)) };
+        /// The offset before any change, then (instant, new offset) in time order.
+        static ZONE: RefCell<(i64, Vec<(i64, i64)>)> = const { RefCell::new((0, Vec::new())) };
     }
 
     /// Freezes "now" at `ms`.
@@ -93,12 +93,18 @@ pub mod clock {
 
     /// A fixed local offset from UTC, e.g. `set_offset(time::HOUR)` for UTC+1.
     pub fn set_offset(ms: i64) {
-        ZONE.with(|z| z.set((0, ms, ms)));
+        set_zone(ms, &[]);
     }
 
     /// Offset `before` until the UTC instant `at`, then `after` (a DST change).
     pub fn set_zone_change(at: i64, before: i64, after: i64) {
-        ZONE.with(|z| z.set((at, before, after)));
+        set_zone(before, &[(at, after)]);
+    }
+
+    /// Offset `initial`, then each `(instant, offset)` change in time order,
+    /// like a real zone's history.
+    pub fn set_zone(initial: i64, changes: &[(i64, i64)]) {
+        ZONE.with_borrow_mut(|z| *z = (initial, changes.to_vec()));
     }
 
     pub fn now() -> i64 {
@@ -111,12 +117,9 @@ pub mod clock {
     }
 
     pub fn offset(utc_ms: i64) -> i64 {
-        let (at, before, after) = ZONE.with(Cell::get);
-        if utc_ms < at {
-            before
-        } else {
-            after
-        }
+        ZONE.with_borrow(|(initial, changes)| {
+            changes.iter().take_while(|(at, _)| *at <= utc_ms).last().map_or(*initial, |(_, o)| *o)
+        })
     }
 }
 
@@ -480,6 +483,20 @@ mod tests {
         // UK: 02:00 BST goes back to 01:00 GMT, so 01:30 happens twice.
         clock::set_zone_change(at(2026, 10, 25, 1, 0), HOUR, 0);
         assert_eq!(from_wall(at(2026, 10, 25, 1, 30)), at(2026, 10, 25, 0, 30));
+    }
+
+    #[test]
+    fn a_repeated_time_uses_the_first_even_if_the_zone_once_had_another_offset() {
+        // A zone that was UTC+3 in the 1970s, then UTC+1 with a change back to UTC+0.
+        clock::set_zone(3 * HOUR, &[(at(1990, 1, 1, 0, 0), HOUR), (at(2026, 10, 25, 1, 0), 0)]);
+        assert_eq!(from_wall(at(2026, 10, 25, 1, 30)), at(2026, 10, 25, 0, 30));
+    }
+
+    #[test]
+    fn a_zone_history_applies_each_change_in_turn() {
+        clock::set_zone(3 * HOUR, &[(1_000, HOUR), (2_000, 0)]);
+        let offsets: Vec<i64> = [999, 1_000, 1_999, 2_000, 9_999].map(clock::offset).into();
+        assert_eq!(offsets, [3 * HOUR, HOUR, HOUR, 0, 0]);
     }
 
     #[test]

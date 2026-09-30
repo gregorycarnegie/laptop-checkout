@@ -87,3 +87,21 @@ fn the_example_loan_history_is_stable(_seeded: ()) {
         .collect();
     insta::assert_snapshot!(lines.join("\n"));
 }
+
+/// A loan has a last-emailed date exactly when it has been emailed.
+fn email_dates_match_counts() -> bool {
+    repo::all_loans().iter().all(|l| (l.emails_sent == 0) == l.last_emailed_at.is_none())
+}
+
+#[rstest]
+fn the_example_data_only_dates_emails_that_were_sent(_seeded: ()) {
+    assert!(email_dates_match_counts());
+}
+
+#[rstest]
+fn logging_an_email_keeps_dates_and_counts_in_step(_seeded: ()) -> TestResult {
+    let loan = repo::open_loans().into_iter().find(|l| l.emails_sent == 0).ok_or("no unemailed loan")?;
+    repo::log_email(&loan, &loan.borrower_email, "Reminder", "Due soon reminder")?;
+    assert!(email_dates_match_counts());
+    Ok(())
+}
