@@ -63,3 +63,27 @@ fn one_open_loan_per_laptop_is_enforced_by_the_database(_seeded: ()) {
     );
     assert!(r.is_err());
 }
+
+/// The whole example history, one line per loan, so any change to the story
+/// the example data tells shows up in review.
+#[rstest]
+fn the_example_loan_history_is_stable(_seeded: ()) {
+    use laptop_checkout::time;
+    let lines: Vec<String> = repo::all_loans()
+        .into_iter()
+        .map(|l| {
+            let (stamp, detail) = vm::stamp_text(l.due_at, l.returned_at, time::now());
+            format!(
+                "{} → {:<16} out {:<18} due {:<10} {} ({}) · {}× emailed",
+                l.asset_tag,
+                l.borrower_name,
+                time::stamp(l.out_at),
+                time::short(l.due_at),
+                stamp,
+                detail,
+                l.emails_sent,
+            )
+        })
+        .collect();
+    insta::assert_snapshot!(lines.join("\n"));
+}
