@@ -635,6 +635,7 @@ mod tests {
 
     #[rstest]
     #[case::today(at(2026, 10, 6, 9, 0), "Due today")]
+    #[case::the_due_instant(end_of_day(at(2026, 10, 6, 0, 0)), "Due today")]
     #[case::tomorrow(at(2026, 10, 5, 9, 0), "Due tomorrow")]
     #[case::in_four_days(at(2026, 10, 2, 9, 0), "Due in 4 days")]
     #[case::one_day_late(at(2026, 10, 7, 9, 0), "1 day late")]
