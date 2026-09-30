@@ -4,82 +4,11 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::db::DbStatus;
 use crate::models::Settings;
+use crate::persist::DbStatus;
 use crate::repo;
 use crate::time;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Page {
-    Desk,
-    Loans,
-    Laptops,
-    Borrowers,
-    Emails,
-    Settings,
-}
-
-impl Page {
-    pub const ALL: [Page; 6] = [
-        Page::Desk,
-        Page::Loans,
-        Page::Laptops,
-        Page::Borrowers,
-        Page::Emails,
-        Page::Settings,
-    ];
-
-    pub fn slug(self) -> &'static str {
-        match self {
-            Page::Desk => "desk",
-            Page::Loans => "loans",
-            Page::Laptops => "laptops",
-            Page::Borrowers => "borrowers",
-            Page::Emails => "emails",
-            Page::Settings => "settings",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Page::Desk => "Desk",
-            Page::Loans => "Loans",
-            Page::Laptops => "Laptops",
-            Page::Borrowers => "Borrowers",
-            Page::Emails => "Email templates",
-            Page::Settings => "Settings",
-        }
-    }
-
-    pub fn from_hash(hash: &str) -> Page {
-        let h = hash.trim_start_matches('#');
-        Page::ALL
-            .into_iter()
-            .find(|p| p.slug() == h)
-            .unwrap_or(Page::Desk)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ToastKind {
-    Ok,
-    Warn,
-    Error,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum ToastAction {
-    EmailLoan { loan_id: i64, purpose: &'static str },
-    EmailAllLate,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct Toast {
-    pub id: u64,
-    pub kind: ToastKind,
-    pub text: String,
-    pub action: Option<(String, ToastAction)>,
-}
+use crate::view_model::{push_toast, Page, Toast, ToastAction, ToastKind};
 
 /// A queue of loans to email, one at a time.
 #[derive(Clone, PartialEq, Debug)]
@@ -92,6 +21,7 @@ pub struct Compose {
 
 #[derive(Clone, Copy)]
 pub struct AppState {
+    /// Bumped after every committed write so queries re-run.
     pub rev: RwSignal<u64>,
     /// Current time, refreshed every minute so due states stay accurate.
     pub clock: RwSignal<i64>,
@@ -105,7 +35,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(notify_permission: String) -> Self {
         let rev = RwSignal::new(0);
         let settings = Memo::new(move |_| {
             rev.track();
@@ -118,7 +48,7 @@ impl AppState {
             toasts: RwSignal::new(Vec::new()),
             compose: RwSignal::new(None),
             db_status: RwSignal::new(DbStatus::default()),
-            notify_permission: RwSignal::new(crate::notify::permission()),
+            notify_permission: RwSignal::new(notify_permission),
             settings,
             next_toast: StoredValue::new(0),
         }
@@ -135,18 +65,9 @@ impl AppState {
     pub fn toast_with(&self, kind: ToastKind, text: impl Into<String>, action: Option<(String, ToastAction)>) {
         let id = self.next_toast.get_value() + 1;
         self.next_toast.set_value(id);
-        self.toasts.update(|t| {
-            t.push(Toast { id, kind, text: text.into(), action });
-            if t.len() > 4 {
-                t.remove(0);
-            }
-        });
+        self.toasts.update(|t| push_toast(t, Toast { id, kind, text: text.into(), action }));
         let toasts = self.toasts;
-        let secs = if kind == ToastKind::Error { 9 } else { 6 };
-        set_timeout(
-            move || toasts.update(|t| t.retain(|x| x.id != id)),
-            Duration::from_secs(secs),
-        );
+        set_timeout(move || toasts.update(|t| t.retain(|x| x.id != id)), Duration::from_secs(kind.seconds()));
     }
 
     pub fn ok(&self, text: impl Into<String>) {
@@ -161,14 +82,11 @@ impl AppState {
         self.toast_with(ToastKind::Error, text, None);
     }
 
-    /// Shows the result of a write: nothing extra on success, the reason on failure.
+    /// Shows the result of a write: `success` if it worked, the reason if not.
     pub fn report<T>(&self, r: Result<T, String>, success: impl Into<String>) -> Option<T> {
         match r {
             Ok(v) => {
-                let text = success.into();
-                if !text.is_empty() {
-                    self.ok(text);
-                }
+                self.ok(success);
                 Some(v)
             }
             Err(e) => {

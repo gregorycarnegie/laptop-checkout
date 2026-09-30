@@ -22,3 +22,8 @@ target
 
 # Trunk build output
 /dist
+# cargo-fuzz working files
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/coverage/

@@ -1,0 +1,14 @@
+---
+source: src/email.rs
+expression: text
+---
+Subject: Final notice: laptop LT-0103 is 4 days overdue
+
+Hi Amara,
+
+We have emailed you before about laptop LT-0103 (Lenovo ThinkPad E14), which was due back on Friday 2 October 2026. It is now 4 days overdue.
+
+Please return it to the library desk by the end of tomorrow. If the laptop is lost or damaged, let us know straight away so we can help.
+
+Ms Patel, IT
+Hillside Academy

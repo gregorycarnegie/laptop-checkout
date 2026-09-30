@@ -24,6 +24,11 @@ impl Borrower {
     pub fn is_active(&self) -> bool {
         self.active != 0
     }
+
+    /// Borrowers who have ever borrowed can't be deleted, only deactivated.
+    pub fn has_history(&self) -> bool {
+        self.total_loans > 0
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -45,6 +50,11 @@ pub struct Laptop {
 impl Laptop {
     pub fn on_loan(&self) -> bool {
         self.loan_id.is_some()
+    }
+
+    /// Laptops that have ever been lent can't be deleted, only retired.
+    pub fn has_history(&self) -> bool {
+        self.total_loans > 0
     }
 }
 

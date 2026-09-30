@@ -29,15 +29,19 @@ sent to a server.
 
 ## Where the data lives
 
-SQLite runs inside the WebAssembly bundle. After every change the database is saved:
+SQLite runs inside the WebAssembly bundle (rusqlite). After every change the
+database is saved, from Rust, to:
 
-1. to the browser's storage (IndexedDB) on this PC, always; and
-2. in Chrome or Edge, to a real `.sqlite` file you choose (**Settings → Save to a new
+1. the browser's storage (IndexedDB) on this PC, always; and
+2. in Chrome or Edge, a real `.sqlite` file you choose (**Settings → Save to a new
    file…**). The browser asks for permission again after it restarts; click
    **Reconnect**.
 
 You can also download a backup copy or restore one from **Settings**. The `.sqlite`
 file opens in any SQLite tool (DB Browser for SQLite, `sqlite3`, …).
+
+There is no hand-written JavaScript in the app: storage, the file pickers,
+clipboard, downloads and notifications all go through `web-sys`/`wasm-bindgen`.
 
 ## Development
 
@@ -48,19 +52,59 @@ trunk serve --open        # dev server with live reload
 trunk build --release     # static site in ./dist
 ```
 
-Deploy `dist/` to any static host. A GitHub Actions workflow
-(`.github/workflows/pages.yml`) builds and publishes it to GitHub Pages on every push
-to `main` (enable Pages → "GitHub Actions" in the repo settings).
+Deploy `dist/` to any static host. `.github/workflows/pages.yml` publishes it to
+GitHub Pages on every push to `main` (enable Pages → "GitHub Actions" first).
 
 ## Layout
 
 | Path | What it does |
 | --- | --- |
 | `src/repo.rs` | All SQL: schema, queries, writes, sample data |
-| `src/db.rs` | rusqlite connection, JSON-param queries, autosave |
-| `js/storage.js` | Tiny shim for IndexedDB and the File System Access API |
-| `src/pages/` | Desk, Loans, Laptops, Borrowers, Email templates, Settings |
+| `src/db.rs` | rusqlite connection, JSON-param queries, change reporting |
+| `src/time.rs` | Calendar maths in pure Rust, with a controllable test clock |
+| `src/view_model.rs` | Every decision the screens make (filters, pickers, messages) |
 | `src/email.rs` | Default templates, placeholder rendering, compose links |
-| `src/csv_import.rs` | CSV parsing and header matching |
-| `src/notify.rs` | Overdue browser notifications |
-| `style/main.css` | Styles (light and dark) |
+| `src/csv_import.rs`, `src/import.rs` | CSV parsing, header matching, import previews |
+| `src/alerts.rs` | Which overdue alerts to raise (delivery is a trait, mocked in tests) |
+| `src/persist.rs` | When to save, as a pure state machine |
+| `src/web/` | Browser-only: IndexedDB, `.sqlite` files, clipboard, notifications |
+| `src/ui/` | Leptos views: wiring and markup only |
+
+## Testing
+
+Business rules live in plain Rust modules so they can be tested natively and
+fast; the browser layer and the UI are tested in real headless Chrome.
+
+| Kind | Where | Run |
+| --- | --- | --- |
+| Unit tests (incl. `rstest` cases, table and macro-generated tests) | `#[cfg(test)] mod tests` in each module | `cargo nextest run` (or `cargo test`) |
+| Property tests (`proptest`) | date maths, percent-encoding, CSV parser, token insertion | included above |
+| Mocks (`mockall`) | the overdue-alert sink in `alerts.rs` | included above |
+| Snapshot tests (`insta`) | rendered email templates in `src/snapshots/` | `cargo insta review` after changes |
+| Integration tests | `tests/repo/*`, `tests/workflows.rs`, `tests/backup.rs` (shared set-up in `tests/common/`) | included above |
+| Doc tests | examples in `time`, `db`, `email`, `persist` | `cargo test --doc` |
+| Browser tests (`wasm-bindgen-test`) | `tests/browser_*.rs`, fakes in `tests/browser_support/` | `cargo test --target wasm32-unknown-unknown` |
+| Fuzzing (`cargo-fuzz`) | `fuzz/fuzz_targets/` | `cd fuzz && cargo +nightly fuzz run csv_import` |
+| Mutation testing (`cargo-mutants`) | whole crate | see below |
+
+Browser tests need `wasm-bindgen-test-runner` (`cargo install wasm-bindgen-cli`
+at the version in `Cargo.lock`) and a chromedriver that matches your Chrome, on
+`PATH` or in `CHROMEDRIVER`. `webdriver.json` lets the headless browser show
+notifications.
+
+### Mutation testing
+
+`cargo-mutants` changes the code in small ways (flips `<` to `<=`, deletes a `!`,
+returns a default) and checks that some test fails for every change.
+
+```sh
+# Core logic, natively (about an hour on 4 cores):
+cargo mutants --exclude 'src/ui/**' --exclude 'src/web/**' --exclude src/main.rs -j 4
+# Browser code, in headless Chrome:
+scripts/mutants-browser.sh -j 2
+```
+
+Code that no test can judge is marked `#[mutants::skip]` with the reason next to
+it (only the entry point, console logging and the browser's clock/timezone
+lookups). Remaining survivors are listed in [`MUTANTS.md`](MUTANTS.md) with why
+each one can't change behaviour.

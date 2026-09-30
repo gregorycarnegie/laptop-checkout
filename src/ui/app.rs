@@ -3,17 +3,21 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::components::CopyButton;
-use crate::db;
 use crate::email;
-use crate::models::Template;
-use crate::pages::{
-    borrowers::BorrowersPage, desk::DeskPage, emails::EmailsPage, laptops::LaptopsPage, loans::LoansPage,
+use crate::repo;
+use crate::time;
+use crate::ui::components::CopyButton;
+use crate::ui::pages::{
+    borrowers::BorrowersPage,
+    desk::DeskPage,
+    emails::EmailsPage,
+    laptops::LaptopsPage,
+    loans::LoansPage,
     settings::{SaveBadge, SettingsPage},
 };
-use crate::repo;
-use crate::state::{use_app, AppState, Page, ToastAction, ToastKind};
-use crate::time;
+use crate::ui::state::{use_app, AppState};
+use crate::view_model::{self as vm, Page, ToastAction};
+use crate::web::{notify, persistence};
 
 #[derive(Clone, PartialEq, Debug)]
 enum Boot {
@@ -24,9 +28,9 @@ enum Boot {
 
 #[component]
 pub fn App() -> impl IntoView {
-    let st = AppState::new();
+    let st = AppState::new(notify::permission());
     provide_context(st);
-    db::set_signals(st.rev, st.db_status);
+    persistence::connect(st.rev, st.db_status);
 
     if let Some(w) = web_sys::window() {
         if let Ok(hash) = w.location().hash() {
@@ -37,7 +41,7 @@ pub fn App() -> impl IntoView {
     let boot = RwSignal::new(Boot::Loading);
     spawn_local(async move {
         let result = async {
-            let fresh = db::init().await?;
+            let fresh = persistence::init().await?;
             repo::migrate()?;
             if fresh {
                 repo::seed_sample()?;
@@ -48,7 +52,7 @@ pub fn App() -> impl IntoView {
         match result {
             Ok(()) => {
                 boot.set(Boot::Ready);
-                crate::notify::start(st);
+                notify::start(st);
             }
             Err(e) => boot.set(Boot::Failed(e)),
         }
@@ -77,8 +81,7 @@ fn Shell() -> impl IntoView {
     let st = use_app();
     let late = Memo::new(move |_| {
         st.rev.track();
-        let now = st.clock.get();
-        repo::open_loans().iter().filter(|l| l.due_at < now).count()
+        vm::late(&repo::open_loans(), st.clock.get()).len()
     });
 
     view! {
@@ -180,7 +183,7 @@ fn ReconnectBanner() -> impl IntoView {
     let st = use_app();
     let reconnect = move |_| {
         spawn_local(async move {
-            match db::reconnect_file().await {
+            match persistence::reconnect_file().await {
                 Ok(true) => match repo::migrate() {
                     Ok(()) => st.ok("Reconnected to the database file."),
                     Err(e) => st.error(e),
@@ -213,11 +216,7 @@ fn Toasts() -> impl IntoView {
                 key=|t| t.id
                 children=move |t| {
                     let id = t.id;
-                    let class = match t.kind {
-                        ToastKind::Ok => "toast ok",
-                        ToastKind::Warn => "toast warn",
-                        ToastKind::Error => "toast error",
-                    };
+                    let class = t.kind.class();
                     let dismiss = move || st.toasts.update(|v| v.retain(|x| x.id != id));
                     view! {
                         <div class=class>
@@ -230,11 +229,7 @@ fn Toasts() -> impl IntoView {
                                         match action.clone() {
                                             ToastAction::EmailLoan { loan_id, purpose } => st.email_loans(vec![loan_id], purpose),
                                             ToastAction::EmailAllLate => {
-                                                let now = time::now();
-                                                let ids = repo::open_loans().into_iter()
-                                                    .filter(|l| l.due_at < now && !l.borrower_email.is_empty())
-                                                    .map(|l| l.id).collect();
-                                                st.email_loans(ids, "overdue");
+                                                st.email_loans(vm::emailable(&vm::late(&repo::open_loans(), time::now())), "overdue");
                                             }
                                         }
                                         dismiss();
@@ -250,21 +245,6 @@ fn Toasts() -> impl IntoView {
             />
         </div>
     }
-}
-
-fn pick_template(templates: &[Template], purpose: &str, preferred: Option<i64>) -> Option<i64> {
-    if purpose == "overdue" {
-        if let Some(id) = preferred.filter(|id| templates.iter().any(|t| t.id == *id)) {
-            return Some(id);
-        }
-    }
-    // The oldest template for the purpose is the everyday one (e.g. "Overdue notice", not "Final notice").
-    templates
-        .iter()
-        .filter(|t| t.purpose == purpose)
-        .min_by_key(|t| t.id)
-        .or_else(|| templates.first())
-        .map(|t| t.id)
 }
 
 /// Writes one email at a time from a queue of loans.
@@ -288,19 +268,17 @@ fn ComposeDialog() -> impl IntoView {
         })
     });
 
-    // Choose a template when a new queue opens.
-    Effect::new(move |prev: Option<bool>| {
-        let open = st.compose.with(|c| c.is_some());
-        if open && prev != Some(true) {
-            let purpose = st.compose.with_untracked(|c| c.as_ref().map(|c| c.purpose).unwrap_or("overdue"));
-            template_id.set(pick_template(
+    // Choose a template whenever a new queue opens (not when stepping through one).
+    let queue = Memo::new(move |_| st.compose.with(|c| c.as_ref().map(|c| (c.loan_ids.clone(), c.purpose))));
+    Effect::new(move |_| {
+        if let Some((_, purpose)) = queue.get() {
+            template_id.set(vm::pick_template(
                 &templates.get_untracked(),
                 purpose,
                 st.settings.get_untracked().late_template,
             ));
             opened.set(Vec::new());
         }
-        open
     });
 
     // Fill in the message whenever the loan or template changes.
@@ -308,7 +286,7 @@ fn ComposeDialog() -> impl IntoView {
         let Some(loan) = current.get() else { return };
         let tid = template_id.get();
         let s = st.settings.get_untracked();
-        let t = templates.get_untracked().into_iter().find(|t| Some(t.id) == tid);
+        let t = templates.with_untracked(|all| vm::find_template(all, tid));
         to.set(loan.borrower_email.clone());
         match t {
             Some(t) => {
@@ -326,24 +304,19 @@ fn ComposeDialog() -> impl IntoView {
     let step = move |delta: isize| {
         st.compose.update(|c| {
             if let Some(c) = c {
-                let next = c.index as isize + delta;
-                if next >= 0 && (next as usize) < c.loan_ids.len() {
-                    c.index = next as usize;
-                }
+                c.index = vm::step_index(c.index, c.loan_ids.len(), delta);
             }
         })
     };
     let app = move || st.settings.get().email_app;
-    let link_for = move |app_key: &str| compose_link(app_key, &to.get(), &subject.get(), &body.get());
+    let link_for = move |app_key: &str| email::compose_url(app_key, &to.get(), &subject.get(), &body.get());
     let mark_opened = move || {
         let Some(loan) = current.get_untracked() else { return };
         if opened.get_untracked().contains(&loan.id) {
             return;
         }
         let tname = templates
-            .get_untracked()
-            .into_iter()
-            .find(|t| Some(t.id) == template_id.get_untracked())
+            .with_untracked(|all| vm::find_template(all, template_id.get_untracked()))
             .map(|t| t.name)
             .unwrap_or_default();
         if repo::log_email(&loan, &to.get_untracked(), &subject.get_untracked(), &tname).is_ok() {
@@ -359,7 +332,7 @@ fn ComposeDialog() -> impl IntoView {
                     <div>
                         <p class="eyebrow">
                             {move || st.compose.with(|c| c.as_ref().map(|c| {
-                                if c.loan_ids.len() > 1 { format!("Email {} of {}", c.index + 1, c.loan_ids.len()) } else { "Email".into() }
+                                vm::queue_label(c.index, c.loan_ids.len())
                             }).unwrap_or_default())}
                         </p>
                         <h2 id="compose-title">
@@ -406,11 +379,11 @@ fn ComposeDialog() -> impl IntoView {
                     <a
                         class="btn primary"
                         href=move || link_for(&app())
-                        target=move || if app() == "mailto" { "_self" } else { "_blank" }
+                        target=move || vm::link_target(&app())
                         rel="noopener"
                         on:click=move |_| mark_opened()
                     >
-                        {move || format!("Open in {}", short_app(&app()))}
+                        {move || format!("Open in {}", vm::short_app(&app()))}
                     </a>
                     <div class="other-apps muted small">
                         "or "
@@ -422,11 +395,11 @@ fn ComposeDialog() -> impl IntoView {
                                     <Show when=move || app() != k>
                                         <a
                                             href=move || link_for(k)
-                                            target=if k == "mailto" { "_self" } else { "_blank" }
+                                            target=vm::link_target(k)
                                             rel="noopener"
                                             on:click=move |_| mark_opened()
                                         >
-                                            {short_app(k)}
+                                            {vm::short_app(k)}
                                         </a>
                                         " "
                                     </Show>
@@ -465,17 +438,4 @@ fn ComposeDialog() -> impl IntoView {
             </div>
         </Show>
     }
-}
-
-fn short_app(k: &str) -> &'static str {
-    match k {
-        "outlook" => "Outlook (work)",
-        "outlook_live" => "Outlook.com",
-        "gmail" => "Gmail",
-        _ => "mail app",
-    }
-}
-
-fn compose_link(app: &str, to: &str, subject: &str, body: &str) -> String {
-    email::compose_url(app, to, subject, body)
 }

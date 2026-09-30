@@ -2,43 +2,13 @@
 
 use leptos::prelude::*;
 
-use crate::components::{Chips, ConfirmButton, DueStamp};
+use crate::import::ImportKind;
 use crate::models::{Laptop, LaptopInput};
-use crate::pages::import::{CsvImport, ImportKind};
 use crate::repo;
-use crate::state::use_app;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Filter {
-    All,
-    Shelf,
-    Out,
-    Late,
-    Repair,
-    Retired,
-}
-
-impl Filter {
-    fn keep(self, l: &Laptop, now: i64) -> bool {
-        match self {
-            Filter::All => l.status != "retired",
-            Filter::Shelf => l.status == "available" && !l.on_loan(),
-            Filter::Out => l.on_loan(),
-            Filter::Late => l.due_at.is_some_and(|d| d < now),
-            Filter::Repair => l.status == "repair",
-            Filter::Retired => l.status == "retired",
-        }
-    }
-}
-
-const FILTERS: [(Filter, &str); 6] = [
-    (Filter::All, "In service"),
-    (Filter::Shelf, "On the shelf"),
-    (Filter::Out, "On loan"),
-    (Filter::Late, "Overdue"),
-    (Filter::Repair, "In repair"),
-    (Filter::Retired, "Retired"),
-];
+use crate::ui::components::{Chips, ConfirmButton, DueStamp};
+use crate::ui::pages::import::CsvImport;
+use crate::ui::state::use_app;
+use crate::view_model::{self as vm, LaptopFilter};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Panel {
@@ -52,7 +22,7 @@ enum Panel {
 pub fn LaptopsPage() -> impl IntoView {
     let st = use_app();
     let panel = RwSignal::new(Panel::None);
-    let filter = RwSignal::new(Filter::All);
+    let filter = RwSignal::new(LaptopFilter::InService);
     let search = RwSignal::new(String::new());
     let all = Memo::new(move |_| {
         st.rev.track();
@@ -60,23 +30,12 @@ pub fn LaptopsPage() -> impl IntoView {
     });
     let counts = Signal::derive(move || {
         let now = st.clock.get();
-        let list = all.get();
-        FILTERS.iter().map(|(f, _)| list.iter().filter(|l| f.keep(l, now)).count()).collect::<Vec<_>>()
+        all.with(|list| vm::counts(list, &LaptopFilter::OPTIONS, |f, l| f.keep(l, now)))
     });
     let shown = Memo::new(move |_| {
         let now = st.clock.get();
-        let q = search.get().trim().to_lowercase();
-        let f = filter.get();
-        all.get()
-            .into_iter()
-            .filter(|l| f.keep(l, now))
-            .filter(|l| {
-                q.is_empty()
-                    || format!("{} {} {} {}", l.asset_tag, l.model, l.serial, l.borrower_name.clone().unwrap_or_default())
-                        .to_lowercase()
-                        .contains(&q)
-            })
-            .collect::<Vec<_>>()
+        let (q, f) = (search.get(), filter.get());
+        all.with(|list| vm::filter_laptops(list, f, &q, now))
     });
 
     view! {
@@ -99,7 +58,7 @@ pub fn LaptopsPage() -> impl IntoView {
         }}
 
         <div class="toolbar">
-            <Chips options=FILTERS.to_vec() value=filter counts=counts />
+            <Chips options=LaptopFilter::OPTIONS.to_vec() value=filter counts=counts />
             <input id="laptop-search" class="input search" type="search" placeholder="Search tag, model, serial" bind:value=search />
         </div>
 
@@ -135,21 +94,21 @@ pub fn LaptopsPage() -> impl IntoView {
 fn LaptopRow(laptop: Laptop, panel: RwSignal<Panel>) -> impl IntoView {
     let st = use_app();
     let id = laptop.id;
-    let status = match (laptop.on_loan(), laptop.status.as_str()) {
-        (true, _) => view! {
+    let status = match vm::laptop_status(&laptop) {
+        vm::LaptopStatus::OnLoan => view! {
             <div class="status-cell">
                 <span class="who">{laptop.borrower_name.clone().unwrap_or_default()}</span>
                 <DueStamp due=laptop.due_at.unwrap_or_default() />
             </div>
         }
         .into_any(),
-        (false, "repair") => view! { <span class="pill soon">"In repair"</span> }.into_any(),
-        (false, "retired") => view! { <span class="pill">"Retired"</span> }.into_any(),
-        _ => view! { <span class="pill ok">"On the shelf"</span> }.into_any(),
+        vm::LaptopStatus::Repair => view! { <span class="pill soon">"In repair"</span> }.into_any(),
+        vm::LaptopStatus::Retired => view! { <span class="pill">"Retired"</span> }.into_any(),
+        vm::LaptopStatus::Shelf => view! { <span class="pill ok">"On the shelf"</span> }.into_any(),
     };
     let current = laptop.status.clone();
     let on_loan = laptop.on_loan();
-    let has_history = laptop.total_loans > 0;
+    let has_history = laptop.has_history();
     let tag = laptop.asset_tag.clone();
     view! {
         <tr>
@@ -172,8 +131,7 @@ fn LaptopRow(laptop: Laptop, panel: RwSignal<Panel>) -> impl IntoView {
                         title=if on_loan { "Check the laptop in before changing its status" } else { "Change status" }
                         on:change=move |ev| {
                             let v = event_target_value(&ev);
-                            let label = match v.as_str() { "repair" => "in repair", "retired" => "retired", _ => "back in service" };
-                            st.report(repo::set_laptop_status(id, &v), format!("{tag} is {label}."));
+                            st.report(repo::set_laptop_status(id, &v), vm::status_message(&tag, &v));
                         }
                     >
                         <option value="available" selected=current == "available">"In service"</option>
@@ -197,7 +155,7 @@ fn LaptopRow(laptop: Laptop, panel: RwSignal<Panel>) -> impl IntoView {
 #[component]
 fn LaptopForm(id: Option<i64>, on_done: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
     let st = use_app();
-    let existing = id.and_then(|id| repo::laptops().into_iter().find(|l| l.id == id));
+    let existing = id.and_then(repo::laptop);
     let tag = RwSignal::new(existing.as_ref().map(|l| l.asset_tag.clone()).unwrap_or_default());
     let model = RwSignal::new(existing.as_ref().map(|l| l.model.clone()).unwrap_or_default());
     let serial = RwSignal::new(existing.as_ref().map(|l| l.serial.clone()).unwrap_or_default());
@@ -221,12 +179,12 @@ fn LaptopForm(id: Option<i64>, on_done: impl Fn() + Clone + Send + Sync + 'stati
         match r {
             Ok(()) => {
                 st.ok(format!("{} saved.", input.asset_tag.trim()));
-                if id.is_none() && add_another.get_untracked() {
+                if vm::keep_form_open(id.is_none(), add_another.get_untracked()) {
                     // Keep the model for the next one in a batch of identical laptops.
                     tag.set(String::new());
                     serial.set(String::new());
                     error.set(None);
-                    request_animation_frame(|| crate::components::focus("laptop-tag"));
+                    request_animation_frame(|| crate::ui::components::focus("laptop-tag"));
                 } else {
                     done();
                 }

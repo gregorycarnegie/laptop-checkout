@@ -1,0 +1,19 @@
+---
+source: src/email.rs
+expression: text
+---
+Subject: You've borrowed laptop LT-0103, due Friday 2 October 2026
+
+Hi Amara,
+
+This confirms you borrowed a laptop from Hillside Academy today.
+
+  Laptop:    Lenovo ThinkPad E14
+  Asset tag: LT-0103
+  Serial:    PF4A9K2M
+  Due back:  Friday 2 October 2026
+
+Please return it to the library desk on or before the due date, with its charger.
+
+Thanks,
+Ms Patel, IT

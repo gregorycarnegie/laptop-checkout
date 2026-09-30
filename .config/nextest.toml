@@ -1,0 +1,6 @@
+[profile.default]
+# Property tests run hundreds of cases; flag anything unusually slow.
+slow-timeout = { period = "20s", terminate-after = 3 }
+
+[profile.ci]
+fail-fast = false

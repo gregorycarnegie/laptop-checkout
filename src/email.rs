@@ -69,10 +69,10 @@ Thanks,
 
 This confirms you borrowed a laptop from {{org_name}} today.
 
-  Laptop:   {{laptop}}
+  Laptop:    {{laptop}}
   Asset tag: {{asset_tag}}
-  Serial:   {{serial}}
-  Due back: {{due_date}}
+  Serial:    {{serial}}
+  Due back:  {{due_date}}
 
 Please return it to {{return_location}} on or before the due date, with its charger.
 
@@ -145,8 +145,30 @@ pub fn render(text: &str, loan: &Loan, s: &Settings) -> String {
     out
 }
 
+/// Percent-encodes like JavaScript's `encodeURIComponent`: everything except
+/// `A–Z a–z 0–9 - _ . ! ~ * ' ( )` becomes `%XX` UTF-8 bytes.
+///
+/// ```
+/// use laptop_checkout::email::encode_component;
+/// assert_eq!(encode_component("a b&c@d.é"), "a%20b%26c%40d.%C3%A9");
+/// ```
+pub fn encode_component(s: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push('%');
+            out.push(HEX[(b >> 4) as usize] as char);
+            out.push(HEX[(b & 0x0f) as usize] as char);
+        }
+    }
+    out
+}
+
 fn enc(s: &str) -> String {
-    String::from(js_sys::encode_uri_component(s))
+    encode_component(s)
 }
 
 /// Email apps the user can compose in.
@@ -173,31 +195,209 @@ pub fn compose_url(app: &str, to: &str, subject: &str, body: &str) -> String {
             enc(subject),
             enc(&body)
         ),
-        "gmail" => format!(
-            "https://mail.google.com/mail/?view=cm&fs=1&to={}&su={}&body={}",
-            enc(to),
-            enc(subject),
-            enc(&body)
-        ),
+        "gmail" => {
+            format!("https://mail.google.com/mail/?view=cm&fs=1&to={}&su={}&body={}", enc(to), enc(subject), enc(&body))
+        }
         _ => format!("mailto:{}?subject={}&body={}", enc(to), enc(subject), enc(&body)),
     }
 }
 
+// Native only: these use test crates that don't build for WebAssembly.
 #[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::*;
+    use crate::time::{clock, days_from_civil, end_of_day, DAY, HOUR};
+    use pretty_assertions::assert_eq;
+    use proptest::prelude::*;
+    use rstest::{fixture, rstest};
 
-    #[test]
-    fn email_shapes() {
-        assert!(looks_like_email("a.b@example.org"));
-        assert!(!looks_like_email("a.b@example"));
-        assert!(!looks_like_email("not an email"));
-        assert!(!looks_like_email("@example.org"));
+    fn settings() -> Settings {
+        Settings {
+            org_name: "Hillside Academy".into(),
+            sender_name: "Ms Patel, IT".into(),
+            return_location: "the library desk".into(),
+            loan_days: 7,
+            email_app: "mailto".into(),
+            notify_enabled: true,
+            renotify_hours: 24,
+            late_template: None,
+            sample_data: false,
+        }
+    }
+
+    /// Tuesday 6 October 2026, 10:00 UTC; the loan was due on Friday 2 October.
+    #[fixture]
+    fn loan() -> Loan {
+        let now = days_from_civil(2026, 10, 6) * DAY + 10 * HOUR;
+        clock::set_now(now);
+        Loan {
+            id: 7,
+            laptop_id: 3,
+            borrower_id: 1,
+            out_at: days_from_civil(2026, 9, 25) * DAY + 9 * HOUR,
+            due_at: end_of_day(days_from_civil(2026, 10, 2) * DAY),
+            returned_at: None,
+            note: String::new(),
+            last_notified_at: None,
+            last_emailed_at: None,
+            emails_sent: 0,
+            renewals: 0,
+            asset_tag: "LT-0103".into(),
+            model: "Lenovo ThinkPad E14".into(),
+            serial: "PF4A9K2M".into(),
+            borrower_name: "Amara Okafor".into(),
+            borrower_email: "amara@example.org".into(),
+            department: "Year 11".into(),
+        }
+    }
+
+    // ------------------------------------------------------------ addresses
+
+    #[rstest]
+    #[case("a.b@example.org", true)]
+    #[case("  padded@example.org  ", true)]
+    #[case("a.b@example", false)]
+    #[case("not an email", false)]
+    #[case("@example.org", false)]
+    #[case("user@.org", false)]
+    #[case("user@example.", false)]
+    #[case("two words@example.org", false)]
+    fn looks_like_email_accepts_only_plausible_addresses(#[case] input: &str, #[case] ok: bool) {
+        assert_eq!(looks_like_email(input), ok, "{input}");
+    }
+
+    #[rstest]
+    #[case("Amara Okafor", "Amara")]
+    #[case("Cher", "Cher")]
+    #[case("  Grace  Whitfield ", "Grace")]
+    #[case("", "")]
+    fn first_name_is_the_first_word(#[case] full: &str, #[case] first: &str) {
+        assert_eq!(first_name(full), first);
+    }
+
+    // ------------------------------------------------------------ rendering
+
+    #[rstest]
+    fn render_fills_in_every_placeholder(loan: Loan) {
+        let all: String = PLACEHOLDERS.iter().map(|(k, _)| format!("{{{{{k}}}}}|")).collect();
+        let out = render(&all, &loan, &settings());
+        assert_eq!(
+            out,
+            "Amara|Amara Okafor|amara@example.org|Lenovo ThinkPad E14|LT-0103|PF4A9K2M|\
+             Friday 25 September 2026|Friday 2 October 2026|4 days|the library desk|Ms Patel, IT|\
+             Hillside Academy|Tuesday 6 October 2026|"
+        );
+    }
+
+    #[rstest]
+    fn render_accepts_placeholders_with_spaces(loan: Loan) {
+        assert_eq!(render("Hi {{ first_name }}", &loan, &settings()), "Hi Amara");
+    }
+
+    #[rstest]
+    fn render_leaves_unknown_placeholders_alone(loan: Loan) {
+        assert_eq!(render("{{shoe_size}}", &loan, &settings()), "{{shoe_size}}");
+    }
+
+    #[rstest]
+    fn render_names_a_laptop_with_no_model(mut loan: Loan) {
+        loan.model.clear();
+        loan.serial.clear();
+        assert_eq!(render("{{laptop}} / {{serial}}", &loan, &settings()), "Laptop / n/a");
+    }
+
+    #[rstest]
+    fn render_says_zero_days_for_a_loan_not_yet_due(mut loan: Loan) {
+        loan.due_at = end_of_day(clock::now() + DAY);
+        assert_eq!(render("{{days_late}}", &loan, &settings()), "0 days");
     }
 
     #[test]
-    fn first_names() {
-        assert_eq!(first_name("Amara Okafor"), "Amara");
-        assert_eq!(first_name("Cher"), "Cher");
+    fn default_templates_cover_every_purpose() {
+        let purposes: Vec<&str> = default_templates().iter().map(|t| t.purpose).collect();
+        assert_eq!(purposes, ["overdue", "overdue", "reminder", "receipt"]);
+    }
+
+    /// Snapshot of each built-in template, rendered for a real loan.
+    #[rstest]
+    fn default_templates_render_as_expected(loan: Loan) {
+        for t in default_templates() {
+            let text =
+                format!("Subject: {}\n\n{}", render(t.subject, &loan, &settings()), render(t.body, &loan, &settings()));
+            insta::assert_snapshot!(t.name.to_lowercase().replace([' ', '-'], "_"), text);
+        }
+    }
+
+    // ------------------------------------------------------------ links
+
+    #[rstest]
+    #[case("a b", "a%20b")]
+    #[case("a+b&c=d", "a%2Bb%26c%3Dd")]
+    #[case("keep-_.!~*'()", "keep-_.!~*'()")]
+    #[case("line\nbreak", "line%0Abreak")]
+    #[case("Tomás", "Tom%C3%A1s")]
+    #[case("€", "%E2%82%AC")]
+    fn encode_component_matches_javascript(#[case] input: &str, #[case] encoded: &str) {
+        assert_eq!(encode_component(input), encoded);
+    }
+
+    fn decode(s: &str) -> String {
+        let bytes = s.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%' {
+                out.push(u8::from_str_radix(&s[i + 1..i + 3], 16).unwrap());
+                i += 3;
+            } else {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+        String::from_utf8(out).unwrap()
+    }
+
+    proptest! {
+        #[test]
+        fn encoding_is_reversible(s in "\\PC*") {
+            prop_assert_eq!(decode(&encode_component(&s)), s);
+        }
+
+        #[test]
+        fn encoded_text_is_safe_in_a_url(s in "\\PC*") {
+            let e = encode_component(&s);
+            prop_assert!(e.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.!~*'()%".contains(&b)));
+        }
+    }
+
+    #[rstest]
+    #[case("mailto", "mailto:a%40b.org?subject=Hi%20there&body=Line%201%0D%0ALine%202")]
+    #[case(
+        "outlook",
+        "https://outlook.office.com/mail/deeplink/compose?to=a%40b.org&subject=Hi%20there&body=Line%201%0D%0ALine%202"
+    )]
+    #[case(
+        "outlook_live",
+        "https://outlook.live.com/mail/0/deeplink/compose?to=a%40b.org&subject=Hi%20there&body=Line%201%0D%0ALine%202"
+    )]
+    #[case(
+        "gmail",
+        "https://mail.google.com/mail/?view=cm&fs=1&to=a%40b.org&su=Hi%20there&body=Line%201%0D%0ALine%202"
+    )]
+    #[case("anything-else", "mailto:a%40b.org?subject=Hi%20there&body=Line%201%0D%0ALine%202")]
+    fn compose_url_opens_each_email_app(#[case] app: &str, #[case] url: &str) {
+        assert_eq!(compose_url(app, "a@b.org", "Hi there", "Line 1\nLine 2"), url);
+    }
+
+    #[test]
+    fn compose_url_does_not_double_windows_line_endings() {
+        assert!(compose_url("mailto", "a@b.org", "s", "a\r\nb").ends_with("body=a%0D%0Ab"));
+    }
+
+    #[test]
+    fn every_email_app_has_a_label() {
+        let keys: Vec<&str> = APPS.iter().map(|(k, _)| *k).collect();
+        assert_eq!(keys, ["mailto", "outlook", "outlook_live", "gmail"]);
     }
 }

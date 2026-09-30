@@ -3,12 +3,14 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::components::ConfirmButton;
-use crate::db;
 use crate::email;
+use crate::persist;
 use crate::repo;
-use crate::state::use_app;
 use crate::time;
+use crate::ui::components::ConfirmButton;
+use crate::ui::state::use_app;
+use crate::view_model as vm;
+use crate::web::persistence as db;
 
 #[component]
 pub fn SettingsPage() -> impl IntoView {
@@ -39,7 +41,7 @@ fn Storage() -> impl IntoView {
             Ok(()) => st.ok(ok),
             Err(e) => st.error(e),
         },
-        Err(e) if db::is_cancel(&e) => {}
+        Err(e) if vm::is_cancel(&e) => {}
         Err(e) => st.error(e),
     };
 
@@ -68,8 +70,7 @@ fn Storage() -> impl IntoView {
         });
     };
     let download = move |_| {
-        let name = format!("laptop-checkout-{}.sqlite", time::to_input(time::now()));
-        if let Err(e) = db::download(&name) {
+        if let Err(e) = db::download(&vm::backup_name(time::now())) {
             st.error(e);
         }
     };
@@ -159,15 +160,7 @@ pub fn SaveBadge() -> impl IntoView {
     view! {
         {move || {
             let s = st.db_status.get();
-            let (class, text) = if s.error.is_some() {
-                ("pill late", "Not saved".to_string())
-            } else if s.saving || s.dirty {
-                ("pill soon", "Saving…".to_string())
-            } else if let Some(t) = s.last_saved {
-                ("pill ok", format!("Saved {}", time::stamp(t)))
-            } else {
-                ("pill ok", "Saved".to_string())
-            };
+            let (class, text) = persist::badge(&s, time::stamp);
             view! { <span class=class title=s.error.clone().unwrap_or_default()>{text}</span> }
         }}
     }
@@ -215,7 +208,7 @@ fn Notifications() -> impl IntoView {
                     "granted" => view! {
                         <p><strong>"Desktop notifications are allowed."</strong></p>
                         <div class="row wrap">
-                            <button type="button" class="btn small" on:click=move |_| crate::notify::show(st, "Test notification", "Overdue alerts will look like this.", "test")>"Send a test"</button>
+                            <button type="button" class="btn small" on:click=move |_| crate::web::notify::show(st, &crate::alerts::Note { title: "Test notification".into(), body: "Overdue alerts will look like this.".into(), tag: "test".into() })>"Send a test"</button>
                         </div>
                     }.into_any(),
                     "denied" => view! {
@@ -229,7 +222,7 @@ fn Notifications() -> impl IntoView {
                     _ => view! {
                         <p><strong>"Desktop notifications are not turned on yet."</strong></p>
                         <div class="row wrap">
-                            <button type="button" class="btn primary" on:click=move |_| crate::notify::request(st)>"Turn on notifications"</button>
+                            <button type="button" class="btn primary" on:click=move |_| crate::web::notify::request(st)>"Turn on notifications"</button>
                         </div>
                     }.into_any(),
                 }}
@@ -259,10 +252,9 @@ fn LoanRules() -> impl IntoView {
                         max="365"
                         prop:value=move || s.get().loan_days.to_string()
                         on:change=move |ev| {
-                            let v = event_target_value(&ev);
-                            match v.trim().parse::<i64>() {
-                                Ok(n) if (1..=365).contains(&n) => { st.report(repo::set_setting("loan_days", &n.to_string()), "Loan period saved."); }
-                                _ => st.error("Enter a number of days between 1 and 365."),
+                            match vm::parse_loan_days(&event_target_value(&ev)) {
+                                Ok(n) => { st.report(repo::set_setting("loan_days", &n.to_string()), "Loan period saved."); }
+                                Err(e) => st.error(e),
                             }
                         }
                     />

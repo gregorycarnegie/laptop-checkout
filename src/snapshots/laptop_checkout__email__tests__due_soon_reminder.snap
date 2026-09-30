@@ -1,0 +1,15 @@
+---
+source: src/email.rs
+expression: text
+---
+Subject: Reminder: laptop LT-0103 is due Friday 2 October 2026
+
+Hi Amara,
+
+Just a reminder that the laptop you borrowed (Lenovo ThinkPad E14, LT-0103) is due back on Friday 2 October 2026.
+
+Please return it to the library desk, or reply if you need to keep it a little longer.
+
+Thanks,
+Ms Patel, IT
+Hillside Academy

@@ -6,6 +6,15 @@ rust-version = "1.88"
 description = "Check laptops in and out like library books. Leptos + SQLite, statically hosted, data kept on your own PC."
 license = "MIT"
 
+[lib]
+name = "laptop_checkout"
+path = "src/lib.rs"
+
+[[bin]]
+name = "laptop-checkout"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
 rusqlite = { version = "0.40", features = ["serialize"] }
@@ -13,23 +22,62 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
+  "BeforeUnloadEvent",
   "Blob",
+  "BlobPropertyBag",
+  "Document",
+  "Element",
   "File",
   "FileList",
+  "HtmlAnchorElement",
+  "HtmlDocument",
+  "HtmlElement",
   "HtmlInputElement",
-  "HtmlTextAreaElement",
   "HtmlSelectElement",
+  "HtmlTextAreaElement",
+  "IdbDatabase",
+  "IdbFactory",
+  "IdbObjectStore",
+  "IdbOpenDbRequest",
+  "IdbRequest",
+  "IdbTransaction",
+  "IdbTransactionMode",
   "KeyboardEvent",
+  "Location",
   "Navigator",
   "Notification",
   "NotificationOptions",
   "NotificationPermission",
-  "Location",
+  "Url",
+  "VisibilityState",
+  "Window",
+  "console",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 csv = "1"
 console_error_panic_hook = "0.1"
+# `#[mutants::skip]` marks code that mutation testing can't meaningfully judge.
+mutants = "0.0.3"
+
+# Natively (tests), compile SQLite from source; in the browser rusqlite uses sqlite-wasm-rs.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.40", features = ["serialize", "bundled"] }
+
+# Native-only: unit, integration, property and snapshot tests.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+fake = "4"
+insta = "1"
+mockall = "0.13"
+pretty_assertions = "1"
+proptest = "1"
+rstest = "0.26"
+tempfile = "3"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+any_spawner = { version = "0.3", features = ["wasm-bindgen"] }
+web-sys = { version = "0.3", features = ["Event", "EventInit", "HtmlButtonElement", "HtmlFormElement", "KeyboardEventInit", "NodeList"] }
 
 [profile.release]
 opt-level = "z"

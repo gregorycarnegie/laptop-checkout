@@ -2,37 +2,13 @@
 
 use leptos::prelude::*;
 
-use crate::components::{Chips, ConfirmButton};
+use crate::import::ImportKind;
 use crate::models::{Borrower, BorrowerInput};
-use crate::pages::import::{CsvImport, ImportKind};
 use crate::repo;
-use crate::state::use_app;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Filter {
-    Active,
-    WithLaptop,
-    Late,
-    Inactive,
-}
-
-impl Filter {
-    fn keep(self, b: &Borrower) -> bool {
-        match self {
-            Filter::Active => b.is_active(),
-            Filter::WithLaptop => b.open_loans > 0,
-            Filter::Late => b.late_loans > 0,
-            Filter::Inactive => !b.is_active(),
-        }
-    }
-}
-
-const FILTERS: [(Filter, &str); 4] = [
-    (Filter::Active, "Active"),
-    (Filter::WithLaptop, "Has a laptop"),
-    (Filter::Late, "Overdue"),
-    (Filter::Inactive, "Inactive"),
-];
+use crate::ui::components::{Chips, ConfirmButton};
+use crate::ui::pages::import::CsvImport;
+use crate::ui::state::use_app;
+use crate::view_model::{self as vm, BorrowerFilter};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Panel {
@@ -46,30 +22,17 @@ enum Panel {
 pub fn BorrowersPage() -> impl IntoView {
     let st = use_app();
     let panel = RwSignal::new(Panel::None);
-    let filter = RwSignal::new(Filter::Active);
+    let filter = RwSignal::new(BorrowerFilter::Active);
     let search = RwSignal::new(String::new());
     let all = Memo::new(move |_| {
         st.rev.track();
         st.clock.track();
         repo::borrowers()
     });
-    let counts = Signal::derive(move || {
-        let list = all.get();
-        FILTERS.iter().map(|(f, _)| list.iter().filter(|b| f.keep(b)).count()).collect::<Vec<_>>()
-    });
+    let counts = Signal::derive(move || all.with(|list| vm::counts(list, &BorrowerFilter::OPTIONS, |f, b| f.keep(b))));
     let shown = Memo::new(move |_| {
-        let q = search.get().trim().to_lowercase();
-        let f = filter.get();
-        all.get()
-            .into_iter()
-            .filter(|b| f.keep(b))
-            .filter(|b| {
-                q.is_empty()
-                    || format!("{} {} {} {}", b.name, b.email, b.department, b.external_id)
-                        .to_lowercase()
-                        .contains(&q)
-            })
-            .collect::<Vec<_>>()
+        let (q, f) = (search.get(), filter.get());
+        all.with(|list| vm::filter_borrowers(list, f, &q))
     });
 
     view! {
@@ -92,7 +55,7 @@ pub fn BorrowersPage() -> impl IntoView {
         }}
 
         <div class="toolbar">
-            <Chips options=FILTERS.to_vec() value=filter counts=counts />
+            <Chips options=BorrowerFilter::OPTIONS.to_vec() value=filter counts=counts />
             <input id="borrower-search" class="input search" type="search" placeholder="Search name, email, ID" bind:value=search />
         </div>
 
@@ -129,13 +92,8 @@ fn BorrowerRow(borrower: Borrower, panel: RwSignal<Panel>) -> impl IntoView {
     let st = use_app();
     let id = borrower.id;
     let active = borrower.is_active();
-    let has_history = borrower.total_loans > 0;
-    let late = borrower.late_loans;
-    let out = match (borrower.open_loans, late) {
-        (0, _) => view! { <span class="muted">"None"</span> }.into_any(),
-        (n, 0) => view! { <span class="pill">{n}" out"</span> }.into_any(),
-        (n, l) => view! { <span class="pill late">{n}" out · "{l}" late"</span> }.into_any(),
-    };
+    let has_history = borrower.has_history();
+    let (out_class, out_text) = vm::loans_out_label(borrower.open_loans, borrower.late_loans);
     view! {
         <tr class:dim=!active>
             <td>
@@ -145,18 +103,16 @@ fn BorrowerRow(borrower: Borrower, panel: RwSignal<Panel>) -> impl IntoView {
             <td class="small">{if borrower.email.is_empty() { "—".to_string() } else { borrower.email.clone() }}</td>
             <td>{borrower.department.clone()}</td>
             <td class="mono small">{borrower.external_id.clone()}</td>
-            <td>{out}</td>
+            <td><span class=out_class>{out_text}</span></td>
             <td class="right">
                 <div class="row end">
-                    {(late > 0).then(|| view! {
+                    {BorrowerFilter::Late.keep(&borrower).then(|| view! {
                         <button
                             type="button"
                             class="btn small late-btn"
                             on:click=move |_| {
-                                let ids = repo::open_loans().into_iter()
-                                    .filter(|l| l.borrower_id == id && l.due_at < crate::time::now())
-                                    .map(|l| l.id).collect();
-                                st.email_loans(ids, "overdue");
+                                let mine: Vec<_> = repo::open_loans().into_iter().filter(|l| l.borrower_id == id).collect();
+                                st.email_loans(vm::emailable(&vm::late(&mine, crate::time::now())), "overdue");
                             }
                         >
                             "Email"
@@ -192,7 +148,7 @@ fn BorrowerRow(borrower: Borrower, panel: RwSignal<Panel>) -> impl IntoView {
 #[component]
 fn BorrowerForm(id: Option<i64>, on_done: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
     let st = use_app();
-    let existing = id.and_then(|id| repo::borrowers().into_iter().find(|b| b.id == id));
+    let existing = id.and_then(repo::borrower);
     let pick = |f: fn(&Borrower) -> String| existing.as_ref().map(f).unwrap_or_default();
     let name = RwSignal::new(pick(|b| b.name.clone()));
     let email = RwSignal::new(pick(|b| b.email.clone()));
@@ -221,12 +177,12 @@ fn BorrowerForm(id: Option<i64>, on_done: impl Fn() + Clone + Send + Sync + 'sta
         match r {
             Ok(()) => {
                 st.ok(format!("{} saved.", input.name.trim()));
-                if id.is_none() && add_another.get_untracked() {
+                if vm::keep_form_open(id.is_none(), add_another.get_untracked()) {
                     for s in [name, email, external_id, phone, notes] {
                         s.set(String::new());
                     }
                     error.set(None);
-                    request_animation_frame(|| crate::components::focus("borrower-name"));
+                    request_animation_frame(|| crate::ui::components::focus("borrower-name"));
                 } else {
                     done();
                 }

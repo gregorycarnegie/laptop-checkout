@@ -1,0 +1,91 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mutants:
+        description: Run mutation testing too
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 3 * * 1" # weekly, Monday night: fuzzing and mutation testing
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  native:
+    name: Unit, integration, property and doc tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo nextest run --profile ci
+      - run: cargo test --doc
+
+  browser:
+    name: Browser tests (headless Chrome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          install-chromedriver: true
+      - name: wasm-bindgen version from Cargo.lock
+        id: wb
+        run: echo "version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wb.outputs.version }}
+      - run: cargo test --target wasm32-unknown-unknown
+        env:
+          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
+
+  fuzz:
+    name: Fuzzing (2 minutes per target)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - working-directory: fuzz
+        run: |
+          cargo fuzz run csv_import -- -max_total_time=120
+          cargo fuzz run date_input -- -max_total_time=120
+
+  mutants:
+    name: Mutation testing (core logic)
+    if: github.event_name == 'schedule' || inputs.mutants
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-mutants
+      - run: cargo mutants --exclude 'src/ui/**' --exclude 'src/web/**' --exclude src/main.rs -j 4
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants.out
+          path: mutants.out

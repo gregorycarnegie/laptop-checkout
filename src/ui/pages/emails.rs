@@ -3,47 +3,12 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::components::ConfirmButton;
 use crate::email::{self, PLACEHOLDERS};
-use crate::models::Loan;
 use crate::repo;
-use crate::state::use_app;
 use crate::time;
-
-const PURPOSES: [(&str, &str); 4] = [
-    ("overdue", "Overdue"),
-    ("reminder", "Due-soon reminder"),
-    ("receipt", "Check-out receipt"),
-    ("general", "General"),
-];
-
-fn purpose_label(p: &str) -> &'static str {
-    PURPOSES.iter().find(|(k, _)| *k == p).map(|(_, v)| *v).unwrap_or("General")
-}
-
-/// A believable loan for previews when there's no real one to use.
-fn preview_loan() -> Loan {
-    let now = time::now();
-    repo::open_loans().into_iter().next().unwrap_or(Loan {
-        id: 0,
-        laptop_id: 0,
-        borrower_id: 0,
-        out_at: now - 10 * time::DAY,
-        due_at: time::end_of_day(now - 3 * time::DAY),
-        returned_at: None,
-        note: String::new(),
-        last_notified_at: None,
-        last_emailed_at: None,
-        emails_sent: 0,
-        renewals: 0,
-        asset_tag: "LT-0103".into(),
-        model: "Lenovo ThinkPad E14 Gen 5".into(),
-        serial: "PF4A9K2M".into(),
-        borrower_name: "Amara Okafor".into(),
-        borrower_email: "amara.okafor@example.org".into(),
-        department: "Year 11".into(),
-    })
-}
+use crate::ui::components::ConfirmButton;
+use crate::ui::state::use_app;
+use crate::view_model::{self as vm, PURPOSES};
 
 #[component]
 pub fn EmailsPage() -> impl IntoView {
@@ -104,7 +69,7 @@ pub fn EmailsPage() -> impl IntoView {
                                     on:click=move |_| selected.set(Some(id))
                                 >
                                     <span class="template-name">{t.name.clone()}</span>
-                                    <span class="muted small">{purpose_label(&t.purpose)}</span>
+                                    <span class="muted small">{vm::purpose_label(&t.purpose)}</span>
                                 </button>
                             }
                         })
@@ -185,43 +150,33 @@ fn TemplateEditor(template: crate::models::Template, selected: RwSignal<Option<i
     let body = RwSignal::new(template.body.clone());
     let purpose = RwSignal::new(template.purpose.clone());
     let body_ref = NodeRef::<leptos::html::Textarea>::new();
-    let sample = preview_loan();
+    let sample = repo::open_loans().into_iter().next().unwrap_or_else(|| vm::sample_loan(time::now()));
     let sample_label = format!("{} · {}", sample.borrower_name, sample.asset_tag);
     let sample = StoredValue::new(sample);
 
     // What's saved, so the Save button only lights up for real edits.
     let saved = RwSignal::new(template);
-    let changed = move || {
-        saved.with(|t| {
-            name.get() != t.name || subject.get() != t.subject || body.get() != t.body || purpose.get() != t.purpose
-        })
-    };
+    let changed =
+        move || saved.with(|t| vm::template_changed(t, &name.get(), &subject.get(), &body.get(), &purpose.get()));
 
     let insert = move |key: &str| {
-        let token = format!("{{{{{key}}}}}");
         let Some(ta) = body_ref.get_untracked() else { return };
         let ta: web_sys::HtmlTextAreaElement = ta.unchecked_into();
         let value = ta.value();
-        let utf16: Vec<u16> = value.encode_utf16().collect();
-        let start = ta.selection_start().ok().flatten().unwrap_or(utf16.len() as u32) as usize;
+        let len = value.encode_utf16().count() as u32;
+        let start = ta.selection_start().ok().flatten().unwrap_or(len) as usize;
         let end = ta.selection_end().ok().flatten().unwrap_or(start as u32) as usize;
-        let (start, end) = (start.min(utf16.len()), end.min(utf16.len()).max(start.min(utf16.len())));
-        let next = format!(
-            "{}{}{}",
-            String::from_utf16_lossy(&utf16[..start]),
-            token,
-            String::from_utf16_lossy(&utf16[end..])
-        );
+        let (next, caret) = vm::insert_token(&value, start, end, key);
         body.set(next.clone());
         ta.set_value(&next);
-        let caret = (start + token.encode_utf16().count()) as u32;
         let _ = ta.focus();
-        let _ = ta.set_selection_range(caret, caret);
+        let _ = ta.set_selection_range(caret as u32, caret as u32);
     };
 
     let save = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        let (n, s, b, p) = (name.get_untracked(), subject.get_untracked(), body.get_untracked(), purpose.get_untracked());
+        let (n, s, b, p) =
+            (name.get_untracked(), subject.get_untracked(), body.get_untracked(), purpose.get_untracked());
         if st.report(repo::save_template(Some(id), &n, &s, &b, &p), "Template saved.").is_some() {
             saved.set(crate::models::Template { id, name: n, subject: s, body: b, purpose: p });
         }

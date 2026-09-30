@@ -1,0 +1,19 @@
+---
+source: src/email.rs
+expression: text
+---
+Subject: Overdue laptop LT-0103: please return it
+
+Hi Amara,
+
+Our records show that the laptop you borrowed is overdue.
+
+  Laptop:   Lenovo ThinkPad E14 (LT-0103)
+  Borrowed: Friday 25 September 2026
+  Due:      Friday 2 October 2026 (4 days late)
+
+Please bring it back to the library desk as soon as you can. If you still need it, reply to this email and we can renew the loan.
+
+Thanks,
+Ms Patel, IT
+Hillside Academy

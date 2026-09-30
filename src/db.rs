@@ -1,155 +1,100 @@
-//! SQLite, running inside the WebAssembly bundle via rusqlite.
+//! SQLite via rusqlite: the same code runs in the browser (WebAssembly) and
+//! natively in tests.
 //!
-//! The database lives in memory while the app is open. After every change it
-//! is serialized and handed to `js/storage.js`, which writes it to IndexedDB on
-//! this PC and, when the user has linked one, to a real `.sqlite` file.
+//! The database lives in memory while the app runs. Whoever embeds it (the web
+//! layer, or a test) installs a [`set_change_hook`] to hear about writes, so it
+//! can save the bytes and refresh the UI.
 //!
 //! Queries take their parameters as a JSON array and decode rows into any
-//! `serde::Deserialize` type by column name, which keeps `repo.rs` compact.
+//! `serde::Deserialize` type by column name, which keeps `repo.rs` compact:
+//!
+//! ```
+//! use laptop_checkout::db;
+//! use serde_json::json;
+//!
+//! db::open_empty().unwrap();
+//! db::run_script("CREATE TABLE t (name TEXT, n INTEGER)").unwrap();
+//! db::exec("INSERT INTO t VALUES (?, ?)", json!(["tag", 3])).unwrap();
+//! assert_eq!(db::scalar("SELECT n FROM t WHERE name = ?", json!(["tag"])), 3);
+//! ```
 
-use std::cell::{Cell, RefCell};
-use std::time::Duration;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{params_from_iter, Connection, MAIN_DB};
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::{Map, Number, Value};
-use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(module = "/js/storage.js")]
-extern "C" {
-    #[wasm_bindgen(js_name = fileInfoJson)]
-    fn js_file_info_json() -> String;
-    #[wasm_bindgen(catch, js_name = loadInitial)]
-    async fn js_load_initial() -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch, js_name = persist)]
-    async fn js_persist(bytes: js_sys::Uint8Array) -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch, js_name = createFile)]
-    async fn js_create_file(bytes: js_sys::Uint8Array) -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch, js_name = openFile)]
-    async fn js_open_file() -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch, js_name = reconnectFile)]
-    async fn js_reconnect_file() -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch, js_name = disconnectFile)]
-    async fn js_disconnect_file() -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch, js_name = readUpload)]
-    async fn js_read_upload(file: web_sys::File) -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch, js_name = downloadBytes)]
-    fn js_download_bytes(bytes: js_sys::Uint8Array, name: &str) -> Result<(), JsValue>;
-    #[wasm_bindgen(js_name = installUnloadGuard)]
-    fn js_install_unload_guard(flush: &Closure<dyn Fn()>, has_unsaved: &Closure<dyn Fn() -> bool>);
-    #[wasm_bindgen(js_name = copyText)]
-    async fn js_copy_text(text: &str) -> JsValue;
+/// What a write changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Change {
+    /// Data changed and needs saving; more writes are coming (inside a transaction).
+    Pending,
+    /// Data changed and is complete: save it and refresh the screen.
+    Committed,
 }
 
-/// Where and whether the database has been saved.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct DbStatus {
-    pub fs_supported: bool,
-    pub file_name: Option<String>,
-    pub file_connected: bool,
-    pub file_needs_permission: bool,
-    pub dirty: bool,
-    pub saving: bool,
-    pub last_saved: Option<i64>,
-    pub error: Option<String>,
-}
-
-#[derive(Deserialize, Default)]
-struct FileInfo {
-    fs_supported: bool,
-    file_name: Option<String>,
-    file_connected: bool,
-    file_needs_permission: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExecResult {
-    #[allow(dead_code)]
     pub changes: usize,
     pub last_id: i64,
 }
 
-#[derive(Default)]
-struct SaveState {
-    generation: u64,
-    dirty: bool,
-    saving: bool,
-    last_saved: Option<i64>,
-    error: Option<String>,
-}
+type Hook = Rc<dyn Fn(Change)>;
 
 thread_local! {
     static CONN: RefCell<Option<Connection>> = const { RefCell::new(None) };
-    static SAVE: RefCell<SaveState> = RefCell::new(SaveState::default());
-    /// Bumped after every write so reactive queries re-run.
-    static REVISION: Cell<Option<RwSignal<u64>>> = const { Cell::new(None) };
-    static STATUS: Cell<Option<RwSignal<DbStatus>>> = const { Cell::new(None) };
+    static HOOK: RefCell<Option<Hook>> = const { RefCell::new(None) };
 }
 
-pub fn set_signals(revision: RwSignal<u64>, status: RwSignal<DbStatus>) {
-    REVISION.with(|r| r.set(Some(revision)));
-    STATUS.with(|s| s.set(Some(status)));
-    refresh_status();
+/// Installs the function told about every write.
+pub fn set_change_hook(hook: impl Fn(Change) + 'static) {
+    HOOK.with_borrow_mut(|h| *h = Some(Rc::new(hook)));
 }
 
-pub fn bump() {
-    if let Some(sig) = REVISION.with(Cell::get) {
-        sig.update(|v| *v += 1);
+fn changed(change: Change) {
+    // Clone out of the RefCell so the hook may itself use the database.
+    if let Some(hook) = HOOK.with_borrow(Clone::clone) {
+        hook(change);
     }
 }
 
-fn refresh_status() {
-    let Some(sig) = STATUS.with(Cell::get) else { return };
-    let info: FileInfo = serde_json::from_str(&js_file_info_json()).unwrap_or_default();
-    let status = SAVE.with_borrow(|s| DbStatus {
-        fs_supported: info.fs_supported,
-        file_name: info.file_name,
-        file_connected: info.file_connected,
-        file_needs_permission: info.file_needs_permission,
-        dirty: s.dirty,
-        saving: s.saving,
-        last_saved: s.last_saved,
-        error: s.error.clone(),
-    });
-    sig.set(status);
-}
-
-pub fn js_error(e: JsValue) -> String {
-    if let Some(s) = e.as_string() {
-        return s;
-    }
-    js_sys::Reflect::get(&e, &JsValue::from_str("message"))
-        .ok()
-        .and_then(|m| m.as_string())
-        .unwrap_or_else(|| format!("{e:?}"))
-}
-
-fn log(msg: &str) {
-    web_sys::console::error_1(&JsValue::from_str(msg));
+/// Tells listeners a batch of changes is complete (e.g. after a migration or
+/// after opening a different database file).
+pub fn announce_change() {
+    changed(Change::Committed);
 }
 
 // ---------------------------------------------------------------- connection
 
+pub const NOT_A_DATABASE: &str = "That file isn't a Laptop Checkout (SQLite) database.";
+
 fn open(bytes: &[u8]) -> Result<Connection, String> {
     let mut conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
     if !bytes.is_empty() {
-        conn.deserialize_read_exact(MAIN_DB, bytes, bytes.len(), false)
-            .map_err(|e| e.to_string())?;
+        conn.deserialize_read_exact(MAIN_DB, bytes, bytes.len(), false).map_err(|e| e.to_string())?;
     }
     // Touch the schema so a file that isn't SQLite fails here, not later.
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
-        .map_err(|_| "That file isn't a Laptop Checkout (SQLite) database.".to_string())?;
+        .map_err(|_| NOT_A_DATABASE.to_string())?;
     Ok(conn)
 }
 
-/// Swaps in a different database, e.g. one opened from a file.
+/// Swaps in a database from its bytes (an empty slice gives a new database).
 pub fn replace(bytes: &[u8]) -> Result<(), String> {
     let conn = open(bytes)?;
     CONN.with_borrow_mut(|c| *c = Some(conn));
     Ok(())
+}
+
+/// Starts with a new, empty database.
+pub fn open_empty() -> Result<(), String> {
+    replace(&[])
+}
+
+pub fn is_open() -> bool {
+    CONN.with_borrow(Option::is_some)
 }
 
 fn with_conn<T>(f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
@@ -159,43 +104,17 @@ fn with_conn<T>(f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, S
     })
 }
 
-fn serialize() -> Result<Vec<u8>, String> {
-    with_conn(|c| {
-        c.serialize(MAIN_DB)
-            .map(|data| data.to_vec())
-            .map_err(|e| e.to_string())
-    })
+/// The whole database as bytes, in SQLite's file format.
+pub fn serialize() -> Result<Vec<u8>, String> {
+    with_conn(|c| c.serialize(MAIN_DB).map(|data| data.to_vec()).map_err(|e| e.to_string()))
 }
 
-/// Loads the saved database. Returns `true` for a brand-new one.
-pub async fn init() -> Result<bool, String> {
-    let saved = js_load_initial().await.map_err(js_error)?;
-    let bytes = (!saved.is_null() && !saved.is_undefined())
-        .then(|| js_sys::Uint8Array::new(&saved).to_vec())
-        .unwrap_or_default();
-    let fresh = bytes.is_empty();
-    replace(&bytes)?;
-
-    let flush = Closure::<dyn Fn()>::new(|| {
-        if SAVE.with_borrow(|s| s.dirty) {
-            spawn_local(save());
-        }
-    });
-    let has_unsaved = Closure::<dyn Fn() -> bool>::new(|| SAVE.with_borrow(|s| s.dirty || s.saving));
-    js_install_unload_guard(&flush, &has_unsaved);
-    flush.forget();
-    has_unsaved.forget();
-
-    refresh_status();
-    Ok(fresh)
-}
-
-// ---------------------------------------------------------------- queries
+// ---------------------------------------------------------------- values
 
 fn to_sql(v: &Value) -> SqlValue {
     match v {
         Value::Null => SqlValue::Null,
-        Value::Bool(b) => SqlValue::Integer(*b as i64),
+        Value::Bool(b) => SqlValue::Integer(i64::from(*b)),
         Value::Number(n) => match n.as_i64() {
             Some(i) => SqlValue::Integer(i),
             None => SqlValue::Real(n.as_f64().unwrap_or(0.0)),
@@ -217,19 +136,18 @@ fn to_json(v: ValueRef<'_>) -> Value {
     match v {
         ValueRef::Null | ValueRef::Blob(_) => Value::Null,
         ValueRef::Integer(i) => Value::from(i),
-        ValueRef::Real(f) => Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null),
+        ValueRef::Real(f) => Number::from_f64(f).map_or(Value::Null, Value::Number),
         ValueRef::Text(t) => Value::String(String::from_utf8_lossy(t).into_owned()),
     }
 }
 
-fn rows(sql: &str, args: &Value) -> Result<Vec<Value>, String> {
+/// Rows as JSON objects keyed by column name.
+pub fn rows(sql: &str, args: &Value) -> Result<Vec<Value>, String> {
     with_conn(|c| {
         let mut stmt = c.prepare_cached(sql).map_err(|e| e.to_string())?;
         let names: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
         let mut out = Vec::new();
-        let mut rows = stmt
-            .query(params_from_iter(params(args)))
-            .map_err(|e| e.to_string())?;
+        let mut rows = stmt.query(params_from_iter(params(args))).map_err(|e| e.to_string())?;
         while let Some(row) = rows.next().map_err(|e| e.to_string())? {
             let mut obj = Map::with_capacity(names.len());
             for (i, name) in names.iter().enumerate() {
@@ -242,14 +160,22 @@ fn rows(sql: &str, args: &Value) -> Result<Vec<Value>, String> {
     })
 }
 
+#[mutants::skip] // Only writes to the browser console.
+fn log(msg: &str) {
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(msg));
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("{msg}");
+}
+
+/// Runs a query and decodes each row. Failures are logged and give no rows,
+/// so a bad query shows an empty list instead of breaking the page.
 pub fn query<T: DeserializeOwned>(sql: &str, args: Value) -> Vec<T> {
     match rows(sql, &args) {
         Ok(rows) => rows
             .into_iter()
             .filter_map(|r| {
-                serde_json::from_value(r)
-                    .map_err(|e| log(&format!("Couldn't read a row ({e}) for: {sql}")))
-                    .ok()
+                serde_json::from_value(r).map_err(|e| log(&format!("Couldn't read a row ({e}) for: {sql}"))).ok()
             })
             .collect(),
         Err(e) => {
@@ -263,171 +189,305 @@ pub fn query_one<T: DeserializeOwned>(sql: &str, args: Value) -> Option<T> {
     query(sql, args).into_iter().next()
 }
 
+/// A single integer from a column named `n` (0 if there's no row or it's NULL).
 pub fn scalar(sql: &str, args: Value) -> i64 {
     #[derive(Deserialize)]
     struct N {
         n: Option<i64>,
     }
-    query_one::<N>(sql, args).and_then(|r| r.n).unwrap_or(0)
+    query_one::<N>(&format!("SELECT ({sql}) AS n"), args).and_then(|r| r.n).unwrap_or(0)
 }
 
-/// Runs a write without refreshing the UI. Use inside `transaction`.
+/// Runs a write without refreshing the screen. Use inside `transaction`.
 pub fn exec_quiet(sql: &str, args: Value) -> Result<ExecResult, String> {
     let r = with_conn(|c| {
         let mut stmt = c.prepare_cached(sql).map_err(|e| e.to_string())?;
-        let changes = stmt
-            .execute(params_from_iter(params(&args)))
-            .map_err(|e| e.to_string())?;
+        let changes = stmt.execute(params_from_iter(params(&args))).map_err(|e| e.to_string())?;
         Ok(ExecResult { changes, last_id: c.last_insert_rowid() })
     })?;
-    mark_dirty();
+    changed(Change::Pending);
     Ok(r)
 }
 
 pub fn exec(sql: &str, args: Value) -> Result<ExecResult, String> {
     let r = exec_quiet(sql, args)?;
-    bump();
+    changed(Change::Committed);
     Ok(r)
 }
 
+fn batch(sql: &str) -> Result<(), String> {
+    with_conn(|c| c.execute_batch(sql).map_err(|e| e.to_string()))
+}
+
+/// Runs several statements with no parameters.
 pub fn run_script(sql: &str) -> Result<(), String> {
-    with_conn(|c| c.execute_batch(sql).map_err(|e| e.to_string()))?;
-    mark_dirty();
+    batch(sql)?;
+    changed(Change::Pending);
     Ok(())
 }
 
 /// Runs `f` inside BEGIN/COMMIT, rolling back if it returns an error.
 pub fn transaction<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    run_script("BEGIN")?;
+    batch("BEGIN")?;
     match f() {
         Ok(v) => {
-            run_script("COMMIT")?;
-            bump();
+            batch("COMMIT")?;
+            changed(Change::Committed);
             Ok(v)
         }
         Err(e) => {
-            let _ = run_script("ROLLBACK");
+            batch("ROLLBACK")?;
             Err(e)
         }
     }
 }
 
-// ---------------------------------------------------------------- saving
+// Native only: these use test crates that don't build for WebAssembly.
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+mod tests {
+    use super::*;
+    use crate::test_support::record_changes;
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use serde_json::json;
 
-fn mark_dirty() {
-    let generation = SAVE.with_borrow_mut(|s| {
-        s.dirty = true;
-        s.generation += 1;
-        s.generation
-    });
-    refresh_status();
-    set_timeout(
-        move || {
-            if SAVE.with_borrow(|s| s.generation) == generation {
-                spawn_local(save());
-            }
-        },
-        Duration::from_millis(400),
-    );
-}
-
-async fn save() {
-    let busy = SAVE.with_borrow_mut(|s| {
-        let busy = s.saving;
-        if !busy {
-            s.saving = true;
-            s.dirty = false;
-        }
-        busy
-    });
-    if busy {
-        mark_dirty();
-        return;
+    fn table() -> Result<(), String> {
+        open_empty()?;
+        run_script("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, n INTEGER, x REAL)")
     }
-    refresh_status();
-    let result = match serialize() {
-        Ok(bytes) => js_persist(js_sys::Uint8Array::from(bytes.as_slice()))
-            .await
-            .map_err(js_error),
-        Err(e) => Err(e),
-    };
-    SAVE.with_borrow_mut(|s| {
-        s.saving = false;
-        match result {
-            Ok(_) => {
-                s.last_saved = Some(crate::time::now());
-                s.error = None;
-            }
-            Err(e) => {
-                s.dirty = true;
-                s.error = Some(format!("Last save failed: {e}"));
-            }
-        }
-    });
-    refresh_status();
-}
 
-pub async fn save_now() {
-    save().await;
-}
-
-// ---------------------------------------------------------------- files on this PC
-
-/// Creates a new `.sqlite` file on the PC and keeps writing every change into it.
-pub async fn create_file() -> Result<(), String> {
-    let bytes = serialize()?;
-    let r = js_create_file(js_sys::Uint8Array::from(bytes.as_slice()))
-        .await
-        .map(|_| ())
-        .map_err(js_error);
-    if r.is_ok() {
-        SAVE.with_borrow_mut(|s| s.last_saved = Some(crate::time::now()));
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Row {
+        id: i64,
+        name: String,
     }
-    refresh_status();
-    r
-}
 
-/// Opens an existing `.sqlite` file and uses it from now on.
-pub async fn open_file() -> Result<(), String> {
-    let bytes = js_open_file().await.map_err(js_error)?;
-    let r = replace(&js_sys::Uint8Array::new(&bytes).to_vec());
-    refresh_status();
-    r
-}
+    // ------------------------------------------------------------ values
 
-/// Re-grants access to the linked file after a browser restart.
-pub async fn reconnect_file() -> Result<bool, String> {
-    let bytes = js_reconnect_file().await.map_err(js_error)?;
-    let ok = !bytes.is_null();
-    if ok {
-        replace(&js_sys::Uint8Array::new(&bytes).to_vec())?;
+    #[rstest]
+    #[case::null(json!(null), SqlValue::Null)]
+    #[case::true_is_one(json!(true), SqlValue::Integer(1))]
+    #[case::false_is_zero(json!(false), SqlValue::Integer(0))]
+    #[case::integer(json!(-42), SqlValue::Integer(-42))]
+    #[case::float(json!(1.5), SqlValue::Real(1.5))]
+    #[case::big_unsigned(json!(u64::MAX), SqlValue::Real(u64::MAX as f64))]
+    #[case::string(json!("tag"), SqlValue::Text("tag".into()))]
+    #[case::object_as_json_text(json!({"a": 1}), SqlValue::Text("{\"a\":1}".into()))]
+    fn json_values_become_sql_values(#[case] v: Value, #[case] sql: SqlValue) {
+        assert_eq!(to_sql(&v), sql);
     }
-    refresh_status();
-    Ok(ok)
-}
 
-pub async fn disconnect_file() -> Result<(), String> {
-    let r = js_disconnect_file().await.map(|_| ()).map_err(js_error);
-    refresh_status();
-    r
-}
+    #[rstest]
+    #[case::array(json!([1, "a"]), vec![SqlValue::Integer(1), SqlValue::Text("a".into())])]
+    #[case::null_means_none(json!(null), vec![])]
+    #[case::single_value(json!(5), vec![SqlValue::Integer(5)])]
+    fn params_accept_an_array_nothing_or_one_value(#[case] v: Value, #[case] expected: Vec<SqlValue>) {
+        assert_eq!(params(&v), expected);
+    }
 
-/// Replaces the current database with a backup the user uploaded.
-pub async fn restore_upload(file: web_sys::File) -> Result<(), String> {
-    let bytes = js_read_upload(file).await.map_err(js_error)?;
-    replace(&js_sys::Uint8Array::new(&bytes).to_vec())
-}
+    #[rstest]
+    #[case::null(ValueRef::Null, json!(null))]
+    #[case::blob(ValueRef::Blob(b"x"), json!(null))]
+    #[case::integer(ValueRef::Integer(7), json!(7))]
+    #[case::real(ValueRef::Real(2.5), json!(2.5))]
+    #[case::not_a_number(ValueRef::Real(f64::NAN), json!(null))]
+    #[case::text(ValueRef::Text(b"hi"), json!("hi"))]
+    fn sql_values_become_json(#[case] v: ValueRef<'static>, #[case] expected: Value) {
+        assert_eq!(to_json(v), expected);
+    }
 
-pub fn download(name: &str) -> Result<(), String> {
-    let bytes = serialize()?;
-    js_download_bytes(js_sys::Uint8Array::from(bytes.as_slice()), name).map_err(js_error)
-}
+    // ------------------------------------------------------------ queries
 
-pub async fn copy_text(text: &str) -> bool {
-    js_copy_text(text).await.as_bool().unwrap_or(false)
-}
+    #[test]
+    fn rows_are_keyed_by_column_name() -> Result<(), String> {
+        table()?;
+        exec("INSERT INTO t (name, n, x) VALUES ('a', 1, 0.5)", json!([]))?;
+        assert_eq!(rows("SELECT name, n, x FROM t", &json!([]))?, vec![json!({"name": "a", "n": 1, "x": 0.5})]);
+        Ok(())
+    }
 
-/// True when the user dismissed a file picker, which isn't worth an error message.
-pub fn is_cancel(err: &str) -> bool {
-    err.contains("aborted") || err.contains("AbortError") || err.contains("cancel")
+    #[test]
+    fn query_decodes_rows_into_structs() -> Result<(), String> {
+        table()?;
+        exec("INSERT INTO t (name) VALUES (?), (?)", json!(["a", "b"]))?;
+        let got: Vec<Row> = query("SELECT id, name FROM t ORDER BY id", json!([]));
+        assert_eq!(got, vec![Row { id: 1, name: "a".into() }, Row { id: 2, name: "b".into() }]);
+        Ok(())
+    }
+
+    #[test]
+    fn query_skips_rows_that_do_not_fit_the_struct() -> Result<(), String> {
+        table()?;
+        exec("INSERT INTO t (name) VALUES ('a'), (NULL)", json!([]))?;
+        let got: Vec<Row> = query("SELECT id, name FROM t ORDER BY id", json!([]));
+        assert_eq!(got, vec![Row { id: 1, name: "a".into() }]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_bad_query_gives_no_rows_instead_of_crashing() -> Result<(), String> {
+        table()?;
+        let got: Vec<Row> = query("SELECT nope FROM missing", json!([]));
+        assert!(got.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn query_one_takes_the_first_row() -> Result<(), String> {
+        table()?;
+        exec("INSERT INTO t (name) VALUES ('a'), ('b')", json!([]))?;
+        let first: Option<Row> = query_one("SELECT id, name FROM t ORDER BY id DESC", json!([]));
+        assert_eq!(first.map(|r| r.name), Some("b".into()));
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::a_value("SELECT n FROM t WHERE name = 'a'", 3)]
+    #[case::no_rows("SELECT n FROM t WHERE name = 'zzz'", 0)]
+    #[case::null("SELECT NULL", 0)]
+    #[case::count("SELECT count(*) FROM t", 1)]
+    fn scalar_reads_one_number(#[case] sql: &str, #[case] n: i64) -> Result<(), String> {
+        table()?;
+        exec("INSERT INTO t (name, n) VALUES ('a', 3)", json!([]))?;
+        assert_eq!(scalar(sql, json!([])), n);
+        Ok(())
+    }
+
+    #[test]
+    fn nothing_works_before_a_database_is_open() {
+        assert!(!is_open());
+        assert_eq!(exec("SELECT 1", json!([])).unwrap_err(), "The database isn't open yet.");
+        assert_eq!(scalar("SELECT 1", json!([])), 0);
+        assert_eq!(serialize().unwrap_err(), "The database isn't open yet.");
+    }
+
+    // ------------------------------------------------------------ writes and change reports
+
+    #[test]
+    fn exec_reports_changed_rows_and_the_new_id() -> Result<(), String> {
+        table()?;
+        exec("INSERT INTO t (name) VALUES ('a')", json!([]))?;
+        let r = exec("INSERT INTO t (name) VALUES ('b')", json!([]))?;
+        assert_eq!(r, ExecResult { changes: 1, last_id: 2 });
+        assert_eq!(exec("UPDATE t SET n = 1", json!([]))?.changes, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn exec_asks_for_a_save_and_a_refresh() -> Result<(), String> {
+        table()?;
+        let log = record_changes();
+        exec("INSERT INTO t (name) VALUES ('a')", json!([]))?;
+        assert_eq!(*log.borrow(), [Change::Pending, Change::Committed]);
+        Ok(())
+    }
+
+    #[test]
+    fn exec_quiet_asks_only_for_a_save() -> Result<(), String> {
+        table()?;
+        let log = record_changes();
+        exec_quiet("INSERT INTO t (name) VALUES ('a')", json!([]))?;
+        run_script("UPDATE t SET n = 2")?;
+        assert_eq!(*log.borrow(), [Change::Pending, Change::Pending]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_failed_write_reports_no_change() -> Result<(), String> {
+        table()?;
+        let log = record_changes();
+        assert!(exec("INSERT INTO missing VALUES (1)", json!([])).is_err());
+        assert!(run_script("NOT SQL").is_err());
+        assert!(log.borrow().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn announce_change_asks_for_a_refresh() {
+        let log = record_changes();
+        announce_change();
+        assert_eq!(*log.borrow(), [Change::Committed]);
+    }
+
+    #[test]
+    fn the_change_hook_may_use_the_database() -> Result<(), String> {
+        table()?;
+        set_change_hook(|_| {
+            let _ = scalar("SELECT count(*) FROM t", json!([]));
+        });
+        exec("INSERT INTO t (name) VALUES ('a')", json!([]))?;
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ transactions
+
+    #[test]
+    fn a_transaction_commits_and_refreshes_once() -> Result<(), String> {
+        table()?;
+        let log = record_changes();
+        let n = transaction(|| {
+            exec_quiet("INSERT INTO t (name) VALUES ('a')", json!([]))?;
+            exec_quiet("INSERT INTO t (name) VALUES ('b')", json!([]))?;
+            Ok(2)
+        })?;
+        assert_eq!(n, 2);
+        assert_eq!(scalar("SELECT count(*) FROM t", json!([])), 2);
+        assert_eq!(*log.borrow(), [Change::Pending, Change::Pending, Change::Committed]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_failing_transaction_rolls_everything_back() -> Result<(), String> {
+        table()?;
+        let log = record_changes();
+        let r: Result<(), String> = transaction(|| {
+            exec_quiet("INSERT INTO t (name) VALUES ('a')", json!([]))?;
+            Err("stop".into())
+        });
+        assert_eq!(r, Err("stop".into()));
+        assert_eq!(scalar("SELECT count(*) FROM t", json!([])), 0);
+        assert!(!log.borrow().contains(&Change::Committed));
+        Ok(())
+    }
+
+    #[test]
+    fn a_transaction_cannot_start_inside_another() -> Result<(), String> {
+        table()?;
+        let r = transaction(|| transaction(|| Ok(())));
+        assert!(r.is_err());
+        // The outer transaction was rolled back, so a new one can start.
+        transaction(|| Ok(()))
+    }
+
+    // ------------------------------------------------------------ bytes
+
+    #[test]
+    fn a_database_survives_serialize_and_replace() -> Result<(), String> {
+        table()?;
+        exec("INSERT INTO t (name) VALUES ('kept')", json!([]))?;
+        let bytes = serialize()?;
+        open_empty()?;
+        replace(&bytes)?;
+        let got: Vec<Row> = query("SELECT id, name FROM t", json!([]));
+        assert_eq!(got, vec![Row { id: 1, name: "kept".into() }]);
+        Ok(())
+    }
+
+    #[test]
+    fn replace_rejects_bytes_that_are_not_sqlite() -> Result<(), String> {
+        table()?;
+        assert_eq!(replace(b"name,email\nAmara,a@b.org\n"), Err(NOT_A_DATABASE.into()));
+        // The open database is left alone.
+        assert_eq!(scalar("SELECT count(*) FROM t", json!([])), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn an_empty_file_opens_as_a_new_database() -> Result<(), String> {
+        replace(&[])?;
+        assert!(is_open());
+        assert_eq!(scalar("SELECT count(*) FROM sqlite_master", json!([])), 0);
+        Ok(())
+    }
 }

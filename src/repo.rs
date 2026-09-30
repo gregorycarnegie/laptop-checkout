@@ -95,7 +95,7 @@ pub fn migrate() -> Result<(), String> {
             )?;
         }
     }
-    db::bump();
+    db::announce_change();
     Ok(())
 }
 
@@ -146,6 +146,10 @@ pub fn borrowers() -> Vec<Borrower> {
     )
 }
 
+pub fn borrower(id: i64) -> Option<Borrower> {
+    borrowers().into_iter().find(|b| b.id == id)
+}
+
 fn clean_borrower(b: &BorrowerInput) -> Result<BorrowerInput, String> {
     let out = BorrowerInput {
         name: b.name.trim().to_string(),
@@ -172,11 +176,8 @@ pub fn find_borrower_by_email(email: &str) -> Option<i64> {
     if email.trim().is_empty() {
         return None;
     }
-    query_one::<Id>(
-        "SELECT id FROM borrowers WHERE lower(email) = lower(?) LIMIT 1",
-        json!([email.trim()]),
-    )
-    .map(|r| r.id)
+    query_one::<Id>("SELECT id FROM borrowers WHERE lower(email) = lower(?) LIMIT 1", json!([email.trim()]))
+        .map(|r| r.id)
 }
 
 pub fn add_borrower(b: &BorrowerInput) -> Result<i64, String> {
@@ -209,16 +210,12 @@ pub fn update_borrower(id: i64, b: &BorrowerInput) -> Result<(), String> {
         }
     }
     write_borrower(id, &b)?;
-    db::bump();
+    db::announce_change();
     Ok(())
 }
 
 pub fn set_borrower_active(id: i64, active: bool) -> Result<(), String> {
-    exec(
-        "UPDATE borrowers SET active = ? WHERE id = ?",
-        json!([active as i64, id]),
-    )
-    .map(|_| ())
+    exec("UPDATE borrowers SET active = ? WHERE id = ?", json!([active as i64, id])).map(|_| ())
 }
 
 pub fn delete_borrower(id: i64) -> Result<(), String> {
@@ -281,6 +278,10 @@ pub fn laptops() -> Vec<Laptop> {
     )
 }
 
+pub fn laptop(id: i64) -> Option<Laptop> {
+    laptops().into_iter().find(|l| l.id == id)
+}
+
 fn clean_laptop(l: &LaptopInput) -> Result<LaptopInput, String> {
     let out = LaptopInput {
         asset_tag: l.asset_tag.trim().to_string(),
@@ -299,11 +300,7 @@ pub fn find_laptop_by_tag(tag: &str) -> Option<i64> {
     struct Id {
         id: i64,
     }
-    query_one::<Id>(
-        "SELECT id FROM laptops WHERE asset_tag = ? COLLATE NOCASE",
-        json!([tag.trim()]),
-    )
-    .map(|r| r.id)
+    query_one::<Id>("SELECT id FROM laptops WHERE asset_tag = ? COLLATE NOCASE", json!([tag.trim()])).map(|r| r.id)
 }
 
 pub fn add_laptop(l: &LaptopInput) -> Result<i64, String> {
@@ -333,11 +330,7 @@ pub fn update_laptop(id: i64, l: &LaptopInput) -> Result<(), String> {
 }
 
 pub fn set_laptop_status(id: i64, status: &str) -> Result<(), String> {
-    exec(
-        "UPDATE laptops SET status = ? WHERE id = ?",
-        json!([status, id]),
-    )
-    .map(|_| ())
+    exec("UPDATE laptops SET status = ? WHERE id = ?", json!([status, id])).map(|_| ())
 }
 
 pub fn delete_laptop(id: i64) -> Result<(), String> {
@@ -381,17 +374,12 @@ pub fn import_laptops(rows: &[LaptopInput], update_existing: bool) -> Result<Imp
 // ---------------------------------------------------------------- loans
 
 pub fn open_loans() -> Vec<Loan> {
-    query(
-        &format!("{LOAN_SELECT} WHERE l.returned_at IS NULL ORDER BY l.due_at"),
-        json!([]),
-    )
+    query(&format!("{LOAN_SELECT} WHERE l.returned_at IS NULL ORDER BY l.due_at"), json!([]))
 }
 
 pub fn all_loans() -> Vec<Loan> {
     query(
-        &format!(
-            "{LOAN_SELECT} ORDER BY (l.returned_at IS NULL) DESC, coalesce(l.returned_at, l.due_at) DESC"
-        ),
+        &format!("{LOAN_SELECT} ORDER BY (l.returned_at IS NULL) DESC, coalesce(l.returned_at, l.due_at) DESC"),
         json!([]),
     )
 }
@@ -452,7 +440,7 @@ pub fn check_in(loan_id: i64, note: &str) -> Result<Loan, String> {
 pub fn renew(loan_id: i64, days: i64) -> Result<i64, String> {
     let l = loan(loan_id).ok_or("That loan no longer exists.")?;
     let base = l.due_at.max(time::now());
-    let due = time::end_of_day(base + days * DAY);
+    let due = time::end_of_day_after(base, days);
     exec(
         "UPDATE loans SET due_at = ?, renewals = renewals + 1, last_notified_at = NULL WHERE id = ?",
         json!([due, loan_id]),
@@ -475,10 +463,7 @@ pub fn loans_needing_alert(now: i64, every_hours: i64) -> Vec<Loan> {
 pub fn mark_notified(ids: &[i64], now: i64) {
     let _ = transaction(|| {
         for id in ids {
-            exec_quiet(
-                "UPDATE loans SET last_notified_at = ? WHERE id = ?",
-                json!([now, id]),
-            )?;
+            exec_quiet("UPDATE loans SET last_notified_at = ? WHERE id = ?", json!([now, id]))?;
         }
         Ok(())
     });
@@ -522,10 +507,8 @@ pub fn delete_template(id: i64) -> Result<(), String> {
 
 pub fn restore_default_templates() -> Result<usize, String> {
     let existing: Vec<String> = templates().into_iter().map(|t| t.name).collect();
-    let missing: Vec<_> = email::default_templates()
-        .into_iter()
-        .filter(|t| !existing.iter().any(|n| n == t.name))
-        .collect();
+    let missing: Vec<_> =
+        email::default_templates().into_iter().filter(|t| !existing.iter().any(|n| n == t.name)).collect();
     let n = missing.len();
     transaction(|| {
         for t in missing {
@@ -615,21 +598,65 @@ pub fn seed_sample() -> Result<(), String> {
         ("LT-0115", "HP ProBook 440 G8", "5CD1044PLM", "retired"),
         ("LT-0116", "Lenovo ThinkPad E14 Gen 5", "PF4A9L0C", "available"),
     ];
-    // (laptop, borrower, out days ago, due in days (negative = late), returned days ago, emails)
-    const LOANS: &[(usize, usize, i64, i64, Option<i64>, i64)] = &[
-        (2, 0, 12, -5, None, 1),
-        (6, 3, 9, -2, None, 0),
-        (11, 6, 8, -1, None, 0),
-        (0, 1, 2, 0, None, 0),
-        (3, 8, 1, 1, None, 0),
-        (8, 4, 1, 6, None, 0),
-        (9, 10, 0, 13, None, 0),
-        (12, 13, 3, 4, None, 0),
-        (1, 5, 20, -13, Some(12), 0),
-        (4, 2, 16, -9, Some(10), 0),
-        (7, 9, 30, -23, Some(18), 2),
-        (13, 11, 14, -7, Some(7), 0),
-        (0, 12, 25, -18, Some(19), 0),
+    /// A loan in the example data, with days counted from today.
+    struct SampleLoan {
+        laptop: usize,
+        borrower: usize,
+        out_days_ago: i64,
+        /// Negative for a loan that fell due in the past.
+        due_in_days: i64,
+        returned_days_ago: Option<i64>,
+        emails: i64,
+    }
+    const LOANS: &[SampleLoan] = &[
+        SampleLoan { laptop: 2, borrower: 0, out_days_ago: 12, due_in_days: -5, returned_days_ago: None, emails: 1 },
+        SampleLoan { laptop: 6, borrower: 3, out_days_ago: 9, due_in_days: -2, returned_days_ago: None, emails: 0 },
+        SampleLoan { laptop: 11, borrower: 6, out_days_ago: 8, due_in_days: -1, returned_days_ago: None, emails: 0 },
+        SampleLoan { laptop: 0, borrower: 1, out_days_ago: 2, due_in_days: 0, returned_days_ago: None, emails: 0 },
+        SampleLoan { laptop: 3, borrower: 8, out_days_ago: 1, due_in_days: 1, returned_days_ago: None, emails: 0 },
+        SampleLoan { laptop: 8, borrower: 4, out_days_ago: 1, due_in_days: 6, returned_days_ago: None, emails: 0 },
+        SampleLoan { laptop: 9, borrower: 10, out_days_ago: 0, due_in_days: 13, returned_days_ago: None, emails: 0 },
+        SampleLoan { laptop: 12, borrower: 13, out_days_ago: 3, due_in_days: 4, returned_days_ago: None, emails: 0 },
+        SampleLoan {
+            laptop: 1,
+            borrower: 5,
+            out_days_ago: 20,
+            due_in_days: -13,
+            returned_days_ago: Some(12),
+            emails: 0,
+        },
+        SampleLoan {
+            laptop: 4,
+            borrower: 2,
+            out_days_ago: 16,
+            due_in_days: -9,
+            returned_days_ago: Some(10),
+            emails: 0,
+        },
+        SampleLoan {
+            laptop: 7,
+            borrower: 9,
+            out_days_ago: 30,
+            due_in_days: -23,
+            returned_days_ago: Some(18),
+            emails: 2,
+        },
+        SampleLoan {
+            laptop: 13,
+            borrower: 11,
+            out_days_ago: 14,
+            due_in_days: -7,
+            returned_days_ago: Some(7),
+            emails: 0,
+        },
+        SampleLoan {
+            laptop: 0,
+            borrower: 12,
+            out_days_ago: 25,
+            due_in_days: -18,
+            returned_days_ago: Some(19),
+            emails: 0,
+        },
     ];
     let now = time::now();
     transaction(|| {
@@ -649,9 +676,17 @@ pub fn seed_sample() -> Result<(), String> {
             )?;
             machines.push(r.last_id);
         }
-        for &(lap, who, out_ago, due_in, returned_ago, emails) in LOANS {
+        for &SampleLoan {
+            laptop: lap,
+            borrower: who,
+            out_days_ago: out_ago,
+            due_in_days: due_in,
+            returned_days_ago: returned_ago,
+            emails,
+        } in LOANS
+        {
             let out = now - out_ago * DAY - 2 * HOUR;
-            let due = time::end_of_day(now + due_in * DAY);
+            let due = time::end_of_day_after(now, due_in);
             let returned = returned_ago.map(|d| now - d * DAY);
             let emailed = (emails > 0).then(|| now - 2 * DAY);
             exec_quiet(
@@ -660,10 +695,7 @@ pub fn seed_sample() -> Result<(), String> {
                 json!([machines[lap], people[who], out, due, returned, emailed, emails]),
             )?;
         }
-        exec_quiet(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('sample_data', '1')",
-            json!([]),
-        )?;
+        exec_quiet("INSERT OR REPLACE INTO settings (key, value) VALUES ('sample_data', '1')", json!([]))?;
         Ok(())
     })
 }

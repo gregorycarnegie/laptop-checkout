@@ -1,0 +1,7 @@
+# Mutation testing with cargo-mutants.
+#
+# Two passes (see README):
+#   * core logic, natively:   cargo mutants --exclude 'src/ui/**' --exclude 'src/web/**' --exclude src/main.rs
+#   * browser code, in Chrome: scripts/mutants-browser.sh
+test_tool = "nextest"
+timeout_multiplier = 3.0
