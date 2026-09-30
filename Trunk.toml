@@ -1,0 +1,6 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Relative URLs so the built site works from any folder or sub-path
+# (GitHub Pages project sites, a USB stick, a shared drive...).
+public_url = "./"
