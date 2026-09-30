@@ -740,7 +740,9 @@ mod tests {
     fn emailable_skips_borrowers_without_an_address(loan: Loan) {
         let mut no_email = with_due(loan.clone(), 2, 0);
         no_email.borrower_email.clear();
-        assert_eq!(emailable(&[loan, no_email]), [1]);
+        assert_eq!(emailable(&[loan.clone(), no_email]), [1]);
+        assert_eq!(emailable(&[with_due(loan.clone(), 5, 0), with_due(loan, 6, 0)]), [5, 6]);
+        assert!(emailable(&[]).is_empty());
     }
 
     #[rstest]
