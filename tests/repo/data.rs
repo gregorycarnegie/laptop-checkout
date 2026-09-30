@@ -74,14 +74,14 @@ fn the_example_loan_history_is_stable(_seeded: ()) {
         .map(|l| {
             let (stamp, detail) = vm::stamp_text(l.due_at, l.returned_at, time::now());
             format!(
-                "{} → {:<16} out {:<18} due {:<10} {} ({}) · {}× emailed",
+                "{} → {:<16} out {:<18} due {:<10} {} ({}) · {}",
                 l.asset_tag,
                 l.borrower_name,
                 time::stamp(l.out_at),
                 time::short(l.due_at),
                 stamp,
                 detail,
-                l.emails_sent,
+                vm::emailed_text(&l).unwrap_or_else(|| "not emailed".into()),
             )
         })
         .collect();

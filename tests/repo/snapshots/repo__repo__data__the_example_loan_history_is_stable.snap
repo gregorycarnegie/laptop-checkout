@@ -2,16 +2,16 @@
 source: tests/repo/data.rs
 expression: "lines.join(\"\\n\")"
 ---
-LT-0110 → Sofia Rossi      out 6 Oct 2026, 08:00  due Mon 19 Oct Due in 13 days (due Mon 19 Oct) · 0× emailed
-LT-0109 → Grace Whitfield  out 5 Oct 2026, 08:00  due Mon 12 Oct Due in 6 days (due Mon 12 Oct) · 0× emailed
-LT-0113 → Jack Thornton    out 3 Oct 2026, 08:00  due Sat 10 Oct Due in 4 days (due Sat 10 Oct) · 0× emailed
-LT-0104 → Zara Mensah      out 5 Oct 2026, 08:00  due Wed 7 Oct  Due tomorrow (due Wed 7 Oct) · 0× emailed
-LT-0101 → Liam Chen        out 4 Oct 2026, 08:00  due Tue 6 Oct  Due today (due Tue 6 Oct) · 0× emailed
-LT-0112 → Hannah Kowalski  out 28 Sep 2026, 08:00 due Mon 5 Oct  1 day late (due Mon 5 Oct) · 0× emailed
-LT-0107 → Tomás Álvarez    out 27 Sep 2026, 08:00 due Sun 4 Oct  2 days late (due Sun 4 Oct) · 0× emailed
-LT-0103 → Amara Okafor     out 24 Sep 2026, 08:00 due Thu 1 Oct  5 days late (due Thu 1 Oct) · 1× emailed
-LT-0114 → Noah Fitzgerald  out 22 Sep 2026, 08:00 due Tue 29 Sep In Tue 29 Sep (on time) · 0× emailed
-LT-0105 → Priya Natarajan  out 20 Sep 2026, 08:00 due Sun 27 Sep In Sat 26 Sep (on time) · 0× emailed
-LT-0102 → Yusuf Rahman     out 16 Sep 2026, 08:00 due Wed 23 Sep In Thu 24 Sep (1 day late) · 0× emailed
-LT-0108 → Ethan Murphy     out 6 Sep 2026, 08:00  due Sun 13 Sep In Fri 18 Sep (5 days late) · 2× emailed
-LT-0101 → Aisha Begum      out 11 Sep 2026, 08:00 due Fri 18 Sep In Thu 17 Sep (on time) · 0× emailed
+LT-0110 → Sofia Rossi      out 6 Oct 2026, 08:00  due Mon 19 Oct Due in 13 days (due Mon 19 Oct) · not emailed
+LT-0109 → Grace Whitfield  out 5 Oct 2026, 08:00  due Mon 12 Oct Due in 6 days (due Mon 12 Oct) · not emailed
+LT-0113 → Jack Thornton    out 3 Oct 2026, 08:00  due Sat 10 Oct Due in 4 days (due Sat 10 Oct) · not emailed
+LT-0104 → Zara Mensah      out 5 Oct 2026, 08:00  due Wed 7 Oct  Due tomorrow (due Wed 7 Oct) · not emailed
+LT-0101 → Liam Chen        out 4 Oct 2026, 08:00  due Tue 6 Oct  Due today (due Tue 6 Oct) · not emailed
+LT-0112 → Hannah Kowalski  out 28 Sep 2026, 08:00 due Mon 5 Oct  1 day late (due Mon 5 Oct) · not emailed
+LT-0107 → Tomás Álvarez    out 27 Sep 2026, 08:00 due Sun 4 Oct  2 days late (due Sun 4 Oct) · not emailed
+LT-0103 → Amara Okafor     out 24 Sep 2026, 08:00 due Thu 1 Oct  5 days late (due Thu 1 Oct) · Emailed 1× · last Sun 4 Oct
+LT-0114 → Noah Fitzgerald  out 22 Sep 2026, 08:00 due Tue 29 Sep In Tue 29 Sep (on time) · not emailed
+LT-0105 → Priya Natarajan  out 20 Sep 2026, 08:00 due Sun 27 Sep In Sat 26 Sep (on time) · not emailed
+LT-0102 → Yusuf Rahman     out 16 Sep 2026, 08:00 due Wed 23 Sep In Thu 24 Sep (1 day late) · not emailed
+LT-0108 → Ethan Murphy     out 6 Sep 2026, 08:00  due Sun 13 Sep In Fri 18 Sep (5 days late) · Emailed 2× · last Sun 4 Oct
+LT-0101 → Aisha Begum      out 11 Sep 2026, 08:00 due Fri 18 Sep In Thu 17 Sep (on time) · not emailed
