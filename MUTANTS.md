@@ -9,8 +9,8 @@ when every test still passes, and **unviable** when the change doesn't compile.
 
 | Pass | Mutants | Caught | Unviable | Missed |
 | --- | ---: | ---: | ---: | ---: |
-| Core logic, native tests (`time`, `email`, `csv_import`, `db`, `repo`, `persist`, `alerts`, `view_model`, `import`, `models`) | 843 | 761 → **all viable** | 54 | 28 → **0** |
-| Browser code, headless Chrome (`web/`, `ui/`) | 116 | 108 → 109 | 7 | 1 → **0** |
+| Core logic, native tests (`time`, `email`, `csv_import`, `db`, `repo`, `persist`, `alerts`, `view_model`, `import`, `models`) | 843 | 761 → **789** | 54 | 28 → **0** |
+| Browser code, headless Chrome (`web/`, `ui/`) | 116 | 108 → **109** | 7 | 1 → **0** |
 
 **No missed mutants remain, so there are no equivalent survivors to explain.**
 The 28 core-logic survivors and the one browser survivor were all real gaps;
