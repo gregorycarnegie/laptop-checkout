@@ -1,6 +1,7 @@
-use laptop_checkout::db;
-use laptop_checkout::repo;
-use laptop_checkout::view_model::{self as vm, LaptopFilter};
+use laptop_checkout::{
+    db, repo,
+    view_model::{self as vm, LaptopFilter},
+};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use serde_json::json;

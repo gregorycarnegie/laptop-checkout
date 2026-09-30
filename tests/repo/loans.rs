@@ -1,6 +1,7 @@
-use laptop_checkout::db;
-use laptop_checkout::repo;
-use laptop_checkout::time::{clock, end_of_day, DAY, HOUR};
+use laptop_checkout::{
+    db, repo,
+    time::{clock, end_of_day, DAY, HOUR},
+};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use serde_json::json;

@@ -3,10 +3,12 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::db::{self, exec, exec_quiet, query, query_one, scalar, transaction};
-use crate::email;
-use crate::models::*;
-use crate::time::{self, DAY, HOUR};
+use crate::{
+    db::{self, exec, exec_quiet, query, query_one, scalar, transaction},
+    email,
+    models::*,
+    time::{self, DAY, HOUR},
+};
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS borrowers (

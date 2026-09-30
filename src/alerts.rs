@@ -4,9 +4,10 @@
 //! period in Settings. How alerts are shown (desktop notifications, in-page
 //! toasts) is up to an [`AlertSink`], so the rules can be tested with a mock.
 
-use crate::models::{Loan, Settings};
-use crate::repo;
-use crate::time;
+use crate::{
+    models::{Loan, Settings},
+    repo, time,
+};
 
 /// One desktop notification.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -115,8 +116,10 @@ pub fn check(now: i64, settings: &Settings, sink: &dyn AlertSink) -> usize {
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use crate::test_support::{at, fresh, now, seeded};
-    use crate::time::{clock, end_of_day, HOUR};
+    use crate::{
+        test_support::{at, fresh, now, seeded},
+        time::{clock, end_of_day, HOUR},
+    };
     use mockall::predicate::{always, eq};
     use pretty_assertions::assert_eq;
     use rstest::rstest;

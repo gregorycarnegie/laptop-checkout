@@ -16,12 +16,12 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
-leptos = { version = "0.8", features = ["csr"] }
-rusqlite = { version = "0.40", features = ["serialize"] }
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = { version = "0.3", features = [
+leptos = { version = "0.8.21", features = ["csr"] }
+rusqlite = { version = "0.40.2", features = ["serialize"] }
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
+js-sys = "0.3.106"
+web-sys = { version = "0.3.106", features = [
   "BeforeUnloadEvent",
   "Blob",
   "BlobPropertyBag",
@@ -53,31 +53,31 @@ web-sys = { version = "0.3", features = [
   "Window",
   "console",
 ] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-csv = "1"
-console_error_panic_hook = "0.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+csv = "1.4.0"
+console_error_panic_hook = "0.1.7"
 # `#[mutants::skip]` marks code that mutation testing can't meaningfully judge.
-mutants = "0.0.3"
+mutants = "0.0.4"
 
 # Natively (tests), compile SQLite from source; in the browser rusqlite uses sqlite-wasm-rs.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rusqlite = { version = "0.40", features = ["serialize", "bundled"] }
+rusqlite = { version = "0.40.2", features = ["serialize", "bundled"] }
 
 # Native-only: unit, integration, property and snapshot tests.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-fake = "4"
-insta = "1"
-mockall = "0.13"
-pretty_assertions = "1"
-proptest = "1"
-rstest = "0.26"
-tempfile = "3"
+fake = "5.1.0"
+insta = "1.48.0"
+mockall = "0.15.0"
+pretty_assertions = "1.4.1"
+proptest = "1.11.0"
+rstest = "0.27.0"
+tempfile = "3.27.0"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = "0.3"
-any_spawner = { version = "0.3", features = ["wasm-bindgen"] }
-web-sys = { version = "0.3", features = ["Event", "EventInit", "HtmlButtonElement", "HtmlFormElement", "KeyboardEventInit", "NodeList"] }
+wasm-bindgen-test = "0.3.79"
+any_spawner = { version = "0.3.0", features = ["wasm-bindgen"] }
+web-sys = { version = "0.3.106", features = ["Event", "EventInit", "HtmlButtonElement", "HtmlFormElement", "KeyboardEventInit", "NodeList"] }
 
 [profile.release]
 opt-level = "z"

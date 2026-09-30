@@ -2,16 +2,16 @@
 
 use std::time::Duration;
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::JsCast;
 
-use crate::models::Loan;
-use crate::repo;
-use crate::time;
-use crate::ui::state::use_app;
-use crate::view_model::{self as vm, PickItem};
-use crate::web::storage;
+use crate::{
+    models::Loan,
+    repo, time,
+    ui::state::use_app,
+    view_model::{self as vm, PickItem},
+    web::storage,
+};
 
 /// Library-card style due-date stamp.
 #[component]

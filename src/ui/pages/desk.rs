@@ -2,11 +2,14 @@
 
 use leptos::prelude::*;
 
-use crate::repo;
-use crate::time;
-use crate::ui::components::{focus, DueStamp, LoanLedger, Picker};
-use crate::ui::state::use_app;
-use crate::view_model::{self as vm, Page, ToastKind};
+use crate::{
+    repo, time,
+    ui::{
+        components::{focus, DueStamp, LoanLedger, Picker},
+        state::use_app,
+    },
+    view_model::{self as vm, Page, ToastKind},
+};
 
 #[component]
 pub fn DeskPage() -> impl IntoView {

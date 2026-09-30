@@ -9,11 +9,13 @@ use std::time::Duration;
 
 use browser_support as fake;
 use browser_support::{eventually, sleep};
-use laptop_checkout::alerts::Note;
-use laptop_checkout::ui::state::AppState;
-use laptop_checkout::view_model::{Page, ToastAction, ToastKind};
-use laptop_checkout::web::notify;
-use laptop_checkout::{db, repo};
+use laptop_checkout::{
+    alerts::Note,
+    db, repo,
+    ui::state::AppState,
+    view_model::{Page, ToastAction, ToastKind},
+    web::notify,
+};
 use leptos::prelude::*;
 use wasm_bindgen_test::*;
 

@@ -1,6 +1,18 @@
 # Laptop Checkout
 
-Check laptops in and out like library books. Built with [Leptos](https://leptos.dev)
+[![Tests](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/tests.yml/badge.svg)](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/tests.yml)
+[![GitHub Pages](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/pages.yml/badge.svg)](https://github.com/gregorycarnegie/laptop-checkout/actions/workflows/pages.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Built with Rust](https://img.shields.io/badge/Built_with-Rust-dea584.svg)](https://www.rust-lang.org/)
+
+Manage laptop loans, borrowers and inventory in your browser, with barcode scanning,
+due dates, overdue reminders and CSV imports. Built for a simple circulation desk,
+with local SQLite storage and no backend to set up.
+
+[Open the app](https://gregorycarnegie.github.io/laptop-checkout/) ·
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+
+The app uses [Leptos](https://leptos.dev)
 and SQLite ([rusqlite](https://github.com/rusqlite/rusqlite)), compiled to WebAssembly
 and served as a plain static site. **The database stays on your own PC** — nothing is
 sent to a server.
@@ -44,6 +56,10 @@ There is no hand-written JavaScript in the app: storage, the file pickers,
 clipboard, downloads and notifications all go through `web-sys`/`wasm-bindgen`.
 
 ## Development
+
+Install Rust 1.88 or newer and LLVM/Clang (needed to compile SQLite for WebAssembly).
+Make sure `clang` is on `PATH`; on Windows, the usual LLVM install directory is
+`C:\Program Files\LLVM\bin`. Then run:
 
 ```sh
 rustup target add wasm32-unknown-unknown

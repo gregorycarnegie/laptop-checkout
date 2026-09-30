@@ -1,5 +1,7 @@
-use laptop_checkout::models::{Laptop, LaptopInput};
-use laptop_checkout::repo::{self, ImportResult};
+use laptop_checkout::{
+    models::{Laptop, LaptopInput},
+    repo::{self, ImportResult},
+};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 

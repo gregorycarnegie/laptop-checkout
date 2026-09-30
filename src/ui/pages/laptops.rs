@@ -2,13 +2,17 @@
 
 use leptos::prelude::*;
 
-use crate::import::ImportKind;
-use crate::models::{Laptop, LaptopInput};
-use crate::repo;
-use crate::ui::components::{Chips, ConfirmButton, DueStamp};
-use crate::ui::pages::import::CsvImport;
-use crate::ui::state::use_app;
-use crate::view_model::{self as vm, LaptopFilter};
+use crate::{
+    import::ImportKind,
+    models::{Laptop, LaptopInput},
+    repo,
+    ui::{
+        components::{Chips, ConfirmButton, DueStamp},
+        pages::import::CsvImport,
+        state::use_app,
+    },
+    view_model::{self as vm, LaptopFilter},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Panel {

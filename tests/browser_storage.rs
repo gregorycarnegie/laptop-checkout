@@ -4,13 +4,10 @@
 
 mod browser_support;
 
-use std::cell::Cell;
-use std::rc::Rc;
+use std::{cell::Cell, rc::Rc};
 
 use browser_support as fake;
-use laptop_checkout::models::BorrowerInput;
-use laptop_checkout::web::storage;
-use laptop_checkout::{db, repo, time};
+use laptop_checkout::{db, models::BorrowerInput, repo, time, web::storage};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 

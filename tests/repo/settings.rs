@@ -1,6 +1,4 @@
-use laptop_checkout::db;
-use laptop_checkout::models::Settings;
-use laptop_checkout::repo;
+use laptop_checkout::{db, models::Settings, repo};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use serde_json::json;

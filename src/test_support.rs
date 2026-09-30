@@ -2,14 +2,15 @@
 //! a frozen clock. Each test runs on its own thread, so each gets its own
 //! database and clock.
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use rstest::fixture;
 
-use crate::db::{self, Change};
-use crate::repo;
-use crate::time::{clock, days_from_civil, DAY, HOUR, MINUTE};
+use crate::{
+    db::{self, Change},
+    repo,
+    time::{clock, days_from_civil, DAY, HOUR, MINUTE},
+};
 
 /// A UTC instant (tests run with a zero timezone offset unless they set one).
 pub fn at(y: i64, m: u32, d: u32, h: i64, min: i64) -> i64 {

@@ -1,16 +1,13 @@
 //! Where the data lives, notifications, loan rules and email details.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
-use crate::email;
-use crate::persist;
-use crate::repo;
-use crate::time;
-use crate::ui::components::ConfirmButton;
-use crate::ui::state::use_app;
-use crate::view_model as vm;
-use crate::web::persistence as db;
+use crate::{
+    email, persist, repo, time,
+    ui::{components::ConfirmButton, state::use_app},
+    view_model as vm,
+    web::persistence as db,
+};
 
 #[component]
 pub fn SettingsPage() -> impl IntoView {

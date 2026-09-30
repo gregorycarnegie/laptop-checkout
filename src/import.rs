@@ -1,10 +1,12 @@
 //! A CSV import in progress: parsed rows, their problems, and which ones
 //! already exist in the database.
 
-use crate::csv_import::{self, Draft};
-use crate::models::{BorrowerInput, LaptopInput};
-use crate::repo::{self, ImportResult};
-use crate::time;
+use crate::{
+    csv_import::{self, Draft},
+    models::{BorrowerInput, LaptopInput},
+    repo::{self, ImportResult},
+    time,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ImportKind {

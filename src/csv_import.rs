@@ -2,8 +2,10 @@
 //! and laptop records. Column headers are matched loosely, so exports from
 //! MIS/HR systems usually work without editing.
 
-use crate::email::looks_like_email;
-use crate::models::{BorrowerInput, LaptopInput};
+use crate::{
+    email::looks_like_email,
+    models::{BorrowerInput, LaptopInput},
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft<T> {
@@ -210,9 +212,10 @@ pub fn mark_repeats<T>(drafts: &mut [Draft<T>], key: impl Fn(&T) -> String) {
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use fake::faker::internet::en::SafeEmail;
-    use fake::faker::name::en::Name;
-    use fake::Fake;
+    use fake::{
+        faker::{internet::en::SafeEmail, name::en::Name},
+        Fake,
+    };
     use pretty_assertions::assert_eq;
     use proptest::prelude::*;
     use rstest::rstest;

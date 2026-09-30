@@ -1,16 +1,19 @@
 //! Connects the database to storage on the PC: every write marks the data
 //! dirty, and shortly after the last one the bytes are saved.
 
-use std::cell::{Cell, RefCell};
-use std::time::Duration;
+use std::{
+    cell::{Cell, RefCell},
+    time::Duration,
+};
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
-use crate::db::{self, Change};
-use crate::persist::{DbStatus, SaveState};
-use crate::time;
-use crate::web::storage;
+use crate::{
+    db::{self, Change},
+    persist::{DbStatus, SaveState},
+    time,
+    web::storage,
+};
 
 /// Wait after the last write before saving.
 const SAVE_DELAY: Duration = Duration::from_millis(400);

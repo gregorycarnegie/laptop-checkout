@@ -2,15 +2,16 @@
 
 use std::time::Duration;
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::prelude::*;
 use web_sys::{Notification, NotificationOptions, NotificationPermission};
 
-use crate::alerts::{self, AlertAction, AlertSink, Note};
-use crate::time;
-use crate::ui::state::AppState;
-use crate::view_model::{Page, ToastAction, ToastKind};
+use crate::{
+    alerts::{self, AlertAction, AlertSink, Note},
+    time,
+    ui::state::AppState,
+    view_model::{Page, ToastAction, ToastKind},
+};
 
 /// How often to look for newly overdue loans while the app is open.
 pub const CHECK_EVERY: Duration = Duration::from_secs(60);

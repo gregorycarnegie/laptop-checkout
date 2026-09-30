@@ -2,13 +2,17 @@
 
 use leptos::prelude::*;
 
-use crate::import::ImportKind;
-use crate::models::{Borrower, BorrowerInput};
-use crate::repo;
-use crate::ui::components::{Chips, ConfirmButton};
-use crate::ui::pages::import::CsvImport;
-use crate::ui::state::use_app;
-use crate::view_model::{self as vm, BorrowerFilter};
+use crate::{
+    import::ImportKind,
+    models::{Borrower, BorrowerInput},
+    repo,
+    ui::{
+        components::{Chips, ConfirmButton},
+        pages::import::CsvImport,
+        state::use_app,
+    },
+    view_model::{self as vm, BorrowerFilter},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Panel {

@@ -2,9 +2,12 @@
 //! and the database and clock are per-thread, so tests never interfere.
 #![allow(dead_code)]
 
-use laptop_checkout::models::{BorrowerInput, LaptopInput};
-use laptop_checkout::time::{clock, days_from_civil, end_of_day, DAY, HOUR, MINUTE};
-use laptop_checkout::{db, repo};
+use laptop_checkout::{
+    db,
+    models::{BorrowerInput, LaptopInput},
+    repo,
+    time::{clock, days_from_civil, end_of_day, DAY, HOUR, MINUTE},
+};
 use rstest::fixture;
 
 pub type TestResult = Result<(), String>;

@@ -4,8 +4,10 @@
 //! opens it in the user's own email app (default mail app, Outlook on the web
 //! or Gmail) ready to send.
 
-use crate::models::{Loan, Settings};
-use crate::time;
+use crate::{
+    models::{Loan, Settings},
+    time,
+};
 
 pub struct DefaultTemplate {
     pub name: &'static str,

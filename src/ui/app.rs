@@ -1,23 +1,24 @@
 //! App shell: boot, navigation, the compose dialog and toasts.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
-use crate::email;
-use crate::repo;
-use crate::time;
-use crate::ui::components::CopyButton;
-use crate::ui::pages::{
-    borrowers::BorrowersPage,
-    desk::DeskPage,
-    emails::EmailsPage,
-    laptops::LaptopsPage,
-    loans::LoansPage,
-    settings::{SaveBadge, SettingsPage},
+use crate::{
+    email, repo, time,
+    ui::{
+        components::CopyButton,
+        pages::{
+            borrowers::BorrowersPage,
+            desk::DeskPage,
+            emails::EmailsPage,
+            laptops::LaptopsPage,
+            loans::LoansPage,
+            settings::{SaveBadge, SettingsPage},
+        },
+        state::{use_app, AppState},
+    },
+    view_model::{self as vm, Page, ToastAction},
+    web::{notify, persistence},
 };
-use crate::ui::state::{use_app, AppState};
-use crate::view_model::{self as vm, Page, ToastAction};
-use crate::web::{notify, persistence};
 
 #[derive(Clone, PartialEq, Debug)]
 enum Boot {

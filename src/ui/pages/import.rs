@@ -1,11 +1,12 @@
 //! CSV import panel shared by the Borrowers and Laptops pages.
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen_futures::JsFuture;
 
-use crate::import::{result_message, ImportKind, Parsed, Tally};
-use crate::ui::state::use_app;
+use crate::{
+    import::{result_message, ImportKind, Parsed, Tally},
+    ui::state::use_app,
+};
 
 #[component]
 pub fn CsvImport(kind: ImportKind, on_close: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {

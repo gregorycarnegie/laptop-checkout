@@ -1,7 +1,4 @@
-use laptop_checkout::db;
-use laptop_checkout::email;
-use laptop_checkout::repo;
-use laptop_checkout::time::clock;
+use laptop_checkout::{db, email, repo, time::clock};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 use serde_json::json;

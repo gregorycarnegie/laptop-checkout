@@ -2,8 +2,10 @@
 //! picker matching, messages and labels. The Leptos views only wire these up,
 //! so the behaviour is tested here without a browser.
 
-use crate::models::{Borrower, Laptop, Loan, Template};
-use crate::time::{self, DueState, DAY};
+use crate::{
+    models::{Borrower, Laptop, Loan, Template},
+    time::{self, DueState, DAY},
+};
 
 // ---------------------------------------------------------------- navigation
 
@@ -601,8 +603,10 @@ pub fn backup_name(now: i64) -> String {
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use crate::test_support::{at, now};
-    use crate::time::{clock, end_of_day, HOUR};
+    use crate::{
+        test_support::{at, now},
+        time::{clock, end_of_day, HOUR},
+    };
     use pretty_assertions::assert_eq;
     use proptest::prelude::*;
     use rstest::{fixture, rstest};

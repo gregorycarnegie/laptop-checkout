@@ -2,10 +2,14 @@
 
 use leptos::prelude::*;
 
-use crate::repo;
-use crate::ui::components::{Chips, LoanLedger};
-use crate::ui::state::use_app;
-use crate::view_model::{self as vm, LoanFilter};
+use crate::{
+    repo,
+    ui::{
+        components::{Chips, LoanLedger},
+        state::use_app,
+    },
+    view_model::{self as vm, LoanFilter},
+};
 
 #[component]
 pub fn LoansPage() -> impl IntoView {

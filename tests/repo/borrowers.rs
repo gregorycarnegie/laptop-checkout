@@ -1,5 +1,7 @@
-use laptop_checkout::models::{Borrower, BorrowerInput};
-use laptop_checkout::repo::{self, ImportResult};
+use laptop_checkout::{
+    models::{Borrower, BorrowerInput},
+    repo::{self, ImportResult},
+};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 

@@ -9,10 +9,13 @@ use std::time::Duration;
 
 use browser_support as fake;
 use browser_support::{eventually, sleep};
-use laptop_checkout::models::BorrowerInput;
-use laptop_checkout::persist::DbStatus;
-use laptop_checkout::web::{persistence, storage};
-use laptop_checkout::{db, repo};
+use laptop_checkout::{
+    db,
+    models::BorrowerInput,
+    persist::DbStatus,
+    repo,
+    web::{persistence, storage},
+};
 use leptos::prelude::*;
 use serde_json::json;
 use wasm_bindgen_test::*;

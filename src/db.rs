@@ -18,11 +18,13 @@
 //! assert_eq!(db::scalar("SELECT n FROM t WHERE name = ?", json!(["tag"])), 3);
 //! ```
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
-use rusqlite::types::{Value as SqlValue, ValueRef};
-use rusqlite::{params_from_iter, Connection, MAIN_DB};
+use rusqlite::{
+    params_from_iter,
+    types::{Value as SqlValue, ValueRef},
+    Connection, MAIN_DB,
+};
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::{Map, Number, Value};
 

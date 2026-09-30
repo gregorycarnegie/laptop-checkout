@@ -4,11 +4,12 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::models::Settings;
-use crate::persist::DbStatus;
-use crate::repo;
-use crate::time;
-use crate::view_model::{push_toast, Page, Toast, ToastAction, ToastKind};
+use crate::{
+    models::Settings,
+    persist::DbStatus,
+    repo, time,
+    view_model::{push_toast, Page, Toast, ToastAction, ToastKind},
+};
 
 /// A queue of loans to email, one at a time.
 #[derive(Clone, PartialEq, Debug)]

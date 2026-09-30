@@ -3,12 +3,12 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::email::{self, PLACEHOLDERS};
-use crate::repo;
-use crate::time;
-use crate::ui::components::ConfirmButton;
-use crate::ui::state::use_app;
-use crate::view_model::{self as vm, PURPOSES};
+use crate::{
+    email::{self, PLACEHOLDERS},
+    repo, time,
+    ui::{components::ConfirmButton, state::use_app},
+    view_model::{self as vm, PURPOSES},
+};
 
 #[component]
 pub fn EmailsPage() -> impl IntoView {

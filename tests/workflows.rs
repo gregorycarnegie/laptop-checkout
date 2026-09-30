@@ -7,11 +7,14 @@ mod common;
 use std::cell::RefCell;
 
 use common::{at, fresh, TestResult};
-use laptop_checkout::alerts::{self, AlertAction, AlertSink, Note};
-use laptop_checkout::import::{ImportKind, Parsed, Tally};
-use laptop_checkout::time::{self, clock, DAY};
-use laptop_checkout::view_model::{self as vm, PickItem};
-use laptop_checkout::{email, repo};
+use laptop_checkout::{
+    alerts::{self, AlertAction, AlertSink, Note},
+    email,
+    import::{ImportKind, Parsed, Tally},
+    repo,
+    time::{self, clock, DAY},
+    view_model::{self as vm, PickItem},
+};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 

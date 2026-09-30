@@ -8,8 +8,10 @@ mod browser_support;
 use std::time::Duration;
 
 use browser_support::*;
-use laptop_checkout::models::{BorrowerInput, LaptopInput};
-use laptop_checkout::{repo, time};
+use laptop_checkout::{
+    models::{BorrowerInput, LaptopInput},
+    repo, time,
+};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
 use web_sys::{HtmlButtonElement, HtmlElement};
