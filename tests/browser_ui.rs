@@ -80,10 +80,14 @@ async fn the_picker_works_from_the_keyboard() {
     let options: Vec<String> =
         all(".picker-list .picker-option .picked-label").into_iter().map(|o| o.text_content().unwrap()).collect();
     assert_eq!(options, ["LT-0111", "LT-0114", "LT-0116"]);
+    let highlighted = || text(".picker-option.active .picked-label");
+    assert_eq!(highlighted(), "LT-0111", "the first suggestion starts highlighted");
     key("#out-laptop", "ArrowDown").await;
+    assert_eq!(highlighted(), "LT-0114");
     key("#out-laptop", "ArrowDown").await;
+    assert_eq!(highlighted(), "LT-0116");
     key("#out-laptop", "ArrowUp").await;
-    assert_eq!(text(".picker-option.active .picked-label"), "LT-0114");
+    assert_eq!(highlighted(), "LT-0114");
     key("#out-laptop", "Enter").await;
     assert_eq!(text(".picked .picked-label"), "LT-0114");
 
