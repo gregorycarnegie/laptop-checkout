@@ -14,7 +14,18 @@ for f in tests/browser_*.rs; do
   tests+=("--cargo-test-arg=--test=$(basename "$f" .rs)")
 done
 
-exec cargo mutants \
+# wasm-bindgen-test-runner stops chromedriver with SIGKILL, so Chrome never
+# deletes its temporary profile (~200 MB per test binary). Over a mutation run
+# that fills the disk, so clear out profiles older than ten minutes as we go.
+(
+  while sleep 60; do
+    find "${TMPDIR:-/tmp}" -maxdepth 1 -name '.org.chromium.Chromium.*' -mmin +10 -exec rm -rf {} + 2>/dev/null
+  done
+) &
+janitor=$!
+trap 'kill $janitor 2>/dev/null' EXIT
+
+cargo mutants \
   --file 'src/web/**' --file 'src/ui/**' \
   --test-tool cargo \
   --cargo-arg=--target=wasm32-unknown-unknown \

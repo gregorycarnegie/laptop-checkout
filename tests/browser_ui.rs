@@ -33,9 +33,8 @@ async fn the_desk_lends_a_laptop_and_takes_one_back() {
     assert_eq!(text(".picked .picked-label"), "LT-0102");
     scan("#out-borrower", "T0388").await;
     click("form.slip button[type=submit]").await;
-    assert_eq!(
-        last_toast(),
-        "LT-0102 checked out to Grace Whitfield. Due ".to_string() + &time::short(time::due_in_days(7)) + "."
+    assert_toast(
+        &("LT-0102 checked out to Grace Whitfield. Due ".to_string() + &time::short(time::due_in_days(7)) + "."),
     );
     assert!(button("Email receipt").is_some(), "Grace has an email address");
     assert_eq!(count(".tally-item .tally-n"), on_loan + 1);
@@ -49,7 +48,7 @@ async fn the_desk_lends_a_laptop_and_takes_one_back() {
     let forms = all("form.slip");
     forms[1].query_selector("button[type=submit]").unwrap().unwrap().unchecked_into::<HtmlElement>().click();
     settle().await;
-    assert_eq!(last_toast(), "LT-0103 returned by Amara Okafor, 5 days late.");
+    assert_toast("LT-0103 returned by Amara Okafor, 5 days late.");
     assert_eq!(count(".tally-item.late .tally-n"), late - 1);
 }
 
@@ -60,7 +59,7 @@ async fn checking_in_without_a_laptop_asks_for_one() {
     let forms = all("form.slip");
     forms[1].query_selector("button[type=submit]").unwrap().unwrap().unchecked_into::<HtmlElement>().click();
     settle().await;
-    assert_eq!(last_toast(), "Scan or choose the laptop being returned.");
+    assert_toast("Scan or choose the laptop being returned.");
     assert!(query(".toast.warn").is_some());
 }
 

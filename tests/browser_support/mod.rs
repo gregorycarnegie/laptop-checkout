@@ -279,6 +279,14 @@ pub fn last_toast() -> String {
     toast_texts().pop().unwrap_or_default()
 }
 
+/// Checks a toast with exactly this text is showing. (Checking only the last
+/// toast would race with the app's own overdue alerts.)
+#[track_caller]
+pub fn assert_toast(text: &str) {
+    let all = toast_texts();
+    assert!(all.iter().any(|t| t == text), "no toast {text:?} in {all:?}");
+}
+
 pub async fn go(label: &str) {
     let link = all(".nav-item")
         .into_iter()
@@ -300,6 +308,9 @@ pub async fn start_app() {
     document().body().unwrap().append_child(&boot).unwrap();
     laptop_checkout::ui::start();
     find(".shell").await;
+    // The automatic overdue alerts have their own tests (browser_notify); here
+    // they would only add toasts at unpredictable moments.
+    laptop_checkout::repo::set_setting("notify_enabled", "0").unwrap();
     assert!(query("#boot").is_none(), "the loading placeholder is removed");
 }
 

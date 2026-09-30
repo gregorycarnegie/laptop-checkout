@@ -21,7 +21,7 @@ async fn a_borrower_can_be_added_one_after_another() {
     type_into("#borrower-email", "t.aziz@example.org").await;
     find("#borrower-another").await.unchecked_into::<HtmlElement>().click();
     click("form.form-panel button[type=submit]").await;
-    assert_eq!(last_toast(), "Tariq Aziz saved.");
+    assert_toast("Tariq Aziz saved.");
     assert_eq!(value("#borrower-name"), "", "cleared for the next person");
 
     type_into("#borrower-name", "Bea Lund").await;
@@ -52,7 +52,7 @@ async fn editing_a_borrower_starts_from_their_details() {
     assert_eq!(value("#borrower-email"), "liam.chen@example.org");
     type_into("#borrower-dept", "Year 11").await;
     click("form.form-panel button[type=submit]").await;
-    assert_eq!(last_toast(), "Liam Chen saved.");
+    assert_toast("Liam Chen saved.");
     assert!(query("form.form-panel").is_none());
 }
 
@@ -62,7 +62,7 @@ async fn borrowers_can_be_deactivated() {
     go("Borrowers").await;
     type_into("#borrower-search", "ethan").await;
     click_button("Deactivate").await;
-    assert_eq!(last_toast(), "Borrower deactivated. They won't appear when checking out.");
+    assert_toast("Borrower deactivated. They won't appear when checking out.");
 }
 
 #[wasm_bindgen_test]
@@ -87,7 +87,7 @@ async fn borrowers_are_imported_from_pasted_csv() {
     assert!(query(".import-summary").is_none(), "an empty box shows no preview");
     type_into("textarea[id^=csv-text]", "First Name,Surname,Email\nNia,Brooks,nia@example.org").await;
     click_button("Import 1").await;
-    assert_eq!(last_toast(), "Added 1 borrower.");
+    assert_toast("Added 1 borrower.");
     assert!(repo::find_borrower_by_email("nia@example.org").is_some());
 }
 
@@ -98,7 +98,7 @@ async fn a_laptop_status_change_is_confirmed() {
     type_into("#laptop-search", "LT-0108").await;
     let select = find("select[id^=laptop-status]").await;
     change(&format!("#{}", select.id()), "repair").await;
-    assert_eq!(last_toast(), "LT-0108 is in repair.");
+    assert_toast("LT-0108 is in repair.");
     assert_eq!(text("td .pill"), "In repair");
 }
 
@@ -109,12 +109,12 @@ async fn a_new_laptop_can_be_deleted_after_confirming() {
     click_button("Add laptop").await;
     type_into("#laptop-tag", "LT-0777").await;
     click("form.form-panel button[type=submit]").await;
-    assert_eq!(last_toast(), "LT-0777 saved.");
+    assert_toast("LT-0777 saved.");
     type_into("#laptop-search", "LT-0777").await;
     click_button("Delete").await;
     assert!(repo::find_laptop_by_tag("LT-0777").is_some(), "one click only arms the button");
     click_button("Delete?").await;
-    assert_eq!(last_toast(), "Laptop deleted.");
+    assert_toast("Laptop deleted.");
     assert!(repo::find_laptop_by_tag("LT-0777").is_none());
 }
 
@@ -141,12 +141,12 @@ async fn a_template_is_edited_and_saved() {
     click_button("{{first_name}}").await;
     assert!(value("#tpl-body").contains("{{first_name}}"));
     click_button("Save template").await;
-    assert_eq!(last_toast(), "Template saved.");
+    assert_toast("Template saved.");
     assert!(save().disabled(), "saved, so nothing left to save");
 
     type_into("#tpl-name", "").await;
     click_button("Save template").await;
-    assert_eq!(last_toast(), "Give the template a name.");
+    assert_toast("Give the template a name.");
     assert!(!save().disabled(), "the failed save is still unsaved");
 }
 
@@ -155,10 +155,10 @@ async fn settings_check_the_loan_period() {
     start_app().await;
     go("Settings").await;
     change("#loan-days", "0").await;
-    assert_eq!(last_toast(), "Enter a number of days between 1 and 365.");
+    assert_toast("Enter a number of days between 1 and 365.");
     assert!(query(".toast.error").is_some());
     change("#loan-days", "14").await;
-    assert_eq!(last_toast(), "Loan period saved.");
+    assert_toast("Loan period saved.");
     assert_eq!(repo::settings().loan_days, 14);
 }
 
@@ -179,14 +179,14 @@ async fn the_database_can_be_saved_to_a_file_from_settings() {
     fail_picker(Some("NotAllowedError".into()));
     click_button("Save to a new file…").await;
     sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(last_toast(), "The request is not allowed.");
+    assert_toast("The request is not allowed.");
 
     fail_picker(None);
     click_button("Save to a new file…").await;
     eventually("the linked file", || text(".callout.ok").contains(FILE)).await;
-    assert_eq!(last_toast(), "Saving to the file on this PC.");
+    assert_toast("Saving to the file on this PC.");
     assert!(text(".storage-line").contains(FILE));
 
     click_button("Stop saving to this file").await;
-    eventually("the confirmation", || last_toast().starts_with("Stopped saving")).await;
+    eventually("the confirmation", || toast_texts().iter().any(|t| t.starts_with("Stopped saving"))).await;
 }
