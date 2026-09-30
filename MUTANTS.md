@@ -10,12 +10,12 @@ when every test still passes, and **unviable** when the change doesn't compile.
 | Pass | Mutants | Caught | Unviable | Missed |
 | --- | ---: | ---: | ---: | ---: |
 | Core logic, native tests (`time`, `email`, `csv_import`, `db`, `repo`, `persist`, `alerts`, `view_model`, `import`, `models`) | 843 | 761 → **all viable** | 54 | 28 → **0** |
-| Browser code, headless Chrome (`web/`, `ui/`) | 116 | 97 | 19 | **0** |
+| Browser code, headless Chrome (`web/`, `ui/`) | 116 | 108 → 109 | 7 | 1 → **0** |
 
 **No missed mutants remain, so there are no equivalent survivors to explain.**
-The 28 core-logic survivors from the first full run were all real gaps; each was
-closed by a new test (and three by fixing code), then the affected functions
-were re-run until everything was caught.
+The 28 core-logic survivors and the one browser survivor were all real gaps;
+each was closed by a new test (and a few by fixing code), then the affected
+functions were re-run until every mutant was caught.
 
 ## What the survivors found
 
@@ -28,6 +28,16 @@ were re-run until everything was caught.
 | `time::describe_due`, `view_model` `LoanFilter::keep`, `LaptopFilter::keep`, `email_purpose`: `<` → `<=` | Nothing tested the exact due instant | Boundary tests: due now is not late, one millisecond later is |
 | `time::clock::offset`: `<` → `<=` | The test clock's switch instant wasn't tested | Boundary test |
 | `view_model::emailable` → `vec![1]` | The test's only expected answer was `[1]` | More cases |
+| `ui::components::Picker`: `==` → `!=` (arrow keys swapped) | Down, Down, Up ends on the same item either way | Check the highlight after every key |
+
+### A lesson about flaky tests
+
+The first browser run reported this Picker mutant as caught. It wasn't: a
+test that read "the last toast" sometimes saw the app's own overdue alert
+instead, and that failure was counted as a catch. Flaky tests make mutation
+results look better than they are, so the tests now check that a specific
+toast is showing, the UI suites switch automatic alerts off, every browser
+suite passed three runs in a row, and the whole browser pass was re-run.
 
 Other bugs found while building the suite (by fuzzing, property tests and
 browser tests rather than mutants): an arithmetic overflow for huge years in
