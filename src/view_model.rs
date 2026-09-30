@@ -987,8 +987,9 @@ mod tests {
     }
 
     #[test]
-    fn a_laptop_due_later_is_not_overdue() {
+    fn a_laptop_due_now_or_later_is_not_overdue() {
         assert!(!LaptopFilter::Late.keep(&laptop(1, "LT-1", "available", Some(now() + 1)), now()));
+        assert!(!LaptopFilter::Late.keep(&laptop(1, "LT-1", "available", Some(now())), now()));
     }
 
     #[test]
