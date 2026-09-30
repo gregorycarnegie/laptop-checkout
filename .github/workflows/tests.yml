@@ -48,10 +48,13 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@${{ steps.wb.outputs.version }}
-      # The runner's preinstalled Chrome, with its matching chromedriver.
-      - run: cargo test --target wasm32-unknown-unknown
-        env:
-          CHROMEDRIVER: ${{ env.CHROMEWEBDRIVER }}/chromedriver
+      # The runner's preinstalled Chrome, with its matching chromedriver
+      # (the runner sets CHROMEWEBDRIVER to the folder it lives in).
+      - run: |
+          export CHROMEDRIVER="${CHROMEWEBDRIVER:+$CHROMEWEBDRIVER/}chromedriver"
+          "$CHROMEDRIVER" --version
+          google-chrome --version
+          cargo test --target wasm32-unknown-unknown
 
   fuzz:
     name: Fuzzing (2 minutes per target)
