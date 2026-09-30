@@ -758,6 +758,13 @@ mod tests {
     }
 
     #[rstest]
+    fn a_loan_due_this_instant_is_not_in_the_overdue_filter(loan: Loan) {
+        let l = with_due(loan, 1, now());
+        assert!(!LoanFilter::Late.keep(&l, now()));
+        assert!(LoanFilter::Late.keep(&l, now() + 1));
+    }
+
+    #[rstest]
     #[case("amara", true)]
     #[case("AMARA lt-0103", true)]
     #[case("lenovo year", true)]
