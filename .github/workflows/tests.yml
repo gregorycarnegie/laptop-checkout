@@ -42,19 +42,16 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - id: chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          install-chromedriver: true
       - name: wasm-bindgen version from Cargo.lock
         id: wb
         run: echo "version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@${{ steps.wb.outputs.version }}
+      # The runner's preinstalled Chrome, with its matching chromedriver.
       - run: cargo test --target wasm32-unknown-unknown
         env:
-          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
+          CHROMEDRIVER: ${{ env.CHROMEWEBDRIVER }}/chromedriver
 
   fuzz:
     name: Fuzzing (2 minutes per target)
