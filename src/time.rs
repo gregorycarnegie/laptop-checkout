@@ -634,6 +634,12 @@ mod tests {
     }
 
     #[test]
+    fn a_zone_change_takes_effect_at_the_given_instant() {
+        clock::set_zone_change(1_000, 0, HOUR);
+        assert_eq!((clock::offset(999), clock::offset(1_000)), (0, HOUR));
+    }
+
+    #[test]
     fn the_clock_defaults_to_the_system_time() {
         let jan_2020 = at(2020, 1, 1, 0, 0);
         assert!(now() > jan_2020);
