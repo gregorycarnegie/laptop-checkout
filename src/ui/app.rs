@@ -89,8 +89,8 @@ fn Shell() -> impl IntoView {
         <div class="shell">
             <aside class="rail">
                 <div class="brand">
-                    <span class="brand-mark" aria-hidden="true">"LT"</span>
-                    <span class="brand-name">"Laptop Checkout"</span>
+                    <span class="brand-mark" aria-hidden="true">"LL"</span>
+                    <span class="brand-name">"Laptop Library"</span>
                 </div>
                 <nav class="nav" aria-label="Sections">
                     {Page::ALL

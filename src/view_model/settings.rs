@@ -23,5 +23,5 @@ pub fn is_cancel(err: &str) -> bool {
 
 /// File name for a backup downloaded on the day containing `now`.
 pub fn backup_name(now: i64) -> String {
-    format!("laptop-checkout-{}.sqlite", time::to_input(now))
+    format!("laptop-library-{}.sqlite", time::to_input(now))
 }

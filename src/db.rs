@@ -66,7 +66,7 @@ pub fn announce_change() {
 
 // ---------------------------------------------------------------- connection
 
-pub const NOT_A_DATABASE: &str = "That file isn't a Laptop Checkout (SQLite) database.";
+pub const NOT_A_DATABASE: &str = "That file isn't a Laptop Library (SQLite) database.";
 
 fn open(bytes: &[u8]) -> Result<Connection, String> {
     let mut conn = Connection::open_in_memory().map_err(|e| e.to_string())?;

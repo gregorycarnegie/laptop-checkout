@@ -72,7 +72,7 @@ async fn saving_to_a_new_file_writes_the_database_into_it() {
     storage::create_file(&db::serialize().unwrap()).await.unwrap();
 
     let pick = fake::last_pick();
-    assert!(pick.contains(r#""suggestedName":"laptop-checkout.sqlite""#), "{pick}");
+    assert!(pick.contains(r#""suggestedName":"laptop-library.sqlite""#), "{pick}");
     assert!(pick.contains(r#"".sqlite",".sqlite3",".db""#), "{pick}");
     let info = storage::file_info();
     assert_eq!((info.file_name.as_deref(), info.writable), (Some(fake::FILE), true));

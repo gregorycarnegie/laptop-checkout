@@ -51,6 +51,7 @@ extern "C" {
     fn clipboard_write_text(text: &str) -> Result<Promise, JsValue>;
 }
 
+// Kept from the app's old name: renaming it would lose everyone's saved data.
 const IDB_NAME: &str = "laptop-checkout";
 const IDB_STORE: &str = "kv";
 const KEY_DB: &str = "db";
@@ -256,7 +257,7 @@ pub async fn persist(bytes: &[u8]) -> Result<(), String> {
 }
 
 fn picker_options(save: bool) -> JsValue {
-    let extra = if save { r#","suggestedName":"laptop-checkout.sqlite""# } else { r#","multiple":false"# };
+    let extra = if save { r#","suggestedName":"laptop-library.sqlite""# } else { r#","multiple":false"# };
     json(&format!(r#"{{"types":{PICKER_TYPES}{extra}}}"#))
 }
 

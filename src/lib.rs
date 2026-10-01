@@ -1,4 +1,4 @@
-//! Laptop Checkout: a library-style loan desk for laptops.
+//! Laptop Library: a library-style loan desk for laptops.
 //!
 //! Leptos (client-side rendered) + SQLite via rusqlite, compiled to
 //! WebAssembly and served as a static site. The database stays on the user's PC.

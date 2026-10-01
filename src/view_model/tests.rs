@@ -693,5 +693,5 @@ fn dismissing_a_file_picker_is_not_an_error(#[case] err: &str, #[case] cancel: b
 
 #[test]
 fn backups_are_named_by_date() {
-    assert_eq!(backup_name(now()), "laptop-checkout-2026-10-06.sqlite");
+    assert_eq!(backup_name(now()), "laptop-library-2026-10-06.sqlite");
 }

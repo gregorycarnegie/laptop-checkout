@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Laptop Checkout</title>
+    <title>Laptop Library</title>
+    <link data-trunk rel="icon" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,14 +16,14 @@
   </head>
   <body>
     <div id="boot" class="boot">Opening the loan ledger…</div>
-    <noscript>Laptop Checkout needs JavaScript and WebAssembly to run.</noscript>
+    <noscript>Laptop Library needs JavaScript and WebAssembly to run.</noscript>
     <script>
       // If the app hasn't started after 12 s (e.g. WebAssembly is blocked), say so.
       setTimeout(function () {
         var boot = document.getElementById("boot");
         if (boot) {
           boot.textContent =
-            "Laptop Checkout couldn't start. It needs a current version of Chrome, Edge, Firefox or Safari with WebAssembly allowed.";
+            "Laptop Library couldn't start. It needs a current version of Chrome, Edge, Firefox or Safari with WebAssembly allowed.";
         }
       }, 12000);
     </script>
