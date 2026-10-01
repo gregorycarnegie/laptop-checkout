@@ -1,7 +1,6 @@
 use laptop_checkout::{db, models::Settings, repo};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::common::{fresh, TestResult};
 
@@ -60,7 +59,7 @@ fn setting_a_value_twice_keeps_the_latest(_fresh: ()) -> TestResult {
     repo::set_setting("loan_days", "3")?;
     repo::set_setting("loan_days", "5")?;
     assert_eq!(repo::settings().loan_days, 5);
-    assert_eq!(db::scalar("SELECT count(*) FROM settings WHERE key = 'loan_days'", json!([])), 1);
+    assert_eq!(db::scalar("SELECT count(*) FROM settings WHERE key = 'loan_days'", []), 1);
     Ok(())
 }
 

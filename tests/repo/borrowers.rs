@@ -192,7 +192,7 @@ fn importing_can_update_people_already_here(_seeded: ()) -> TestResult {
 #[rstest]
 fn imported_borrowers_are_stamped_with_the_time(_fresh: ()) -> TestResult {
     repo::import_borrowers(&[person("New", "new@example.org")], false)?;
-    let when = laptop_checkout::db::scalar("SELECT created_at FROM borrowers", serde_json::json!([]));
+    let when = laptop_checkout::db::scalar("SELECT created_at FROM borrowers", []);
     assert_eq!(when, now());
     Ok(())
 }

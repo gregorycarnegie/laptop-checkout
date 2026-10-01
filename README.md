@@ -76,9 +76,9 @@ GitHub Pages on every push to `main` (enable Pages → "GitHub Actions" first).
 | Path | What it does |
 | --- | --- |
 | `src/repo.rs` | All SQL: schema, queries, writes, sample data |
-| `src/db.rs` | rusqlite connection, JSON-param queries, change reporting |
+| `src/db.rs` | rusqlite connection, queries decoded by column name, change reporting |
 | `src/time.rs` | Calendar maths in pure Rust, with a controllable test clock |
-| `src/view_model.rs` | Every decision the screens make (filters, pickers, messages) |
+| `src/view_model/` | Every decision the screens make (filters, pickers, messages), one file per page |
 | `src/email.rs` | Default templates, placeholder rendering, compose links |
 | `src/csv_import.rs`, `src/import.rs` | CSV parsing, header matching, import previews |
 | `src/alerts.rs` | Which overdue alerts to raise (delivery is a trait, mocked in tests) |

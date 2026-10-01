@@ -1,10 +1,11 @@
 use laptop_checkout::{
-    db, repo,
+    db,
+    models::ServiceStatus,
+    repo,
     time::{clock, end_of_day, DAY, HOUR},
 };
 use pretty_assertions::assert_eq;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::common::{at, due_in, fresh, lend, machine, now, person, seeded, TestResult};
 
@@ -43,9 +44,9 @@ fn a_laptop_already_out_cannot_be_checked_out_again(_fresh: ()) -> TestResult {
 }
 
 #[rstest]
-#[case("repair", "LT-1 is marked as in repair.")]
-#[case("retired", "LT-1 is retired.")]
-fn laptops_out_of_service_cannot_be_lent(_fresh: (), #[case] status: &str, #[case] error: &str) -> TestResult {
+#[case(ServiceStatus::Repair, "LT-1 is marked as in repair.")]
+#[case(ServiceStatus::Retired, "LT-1 is retired.")]
+fn laptops_out_of_service_cannot_be_lent(_fresh: (), #[case] status: ServiceStatus, #[case] error: &str) -> TestResult {
     let (laptop, borrower) = setup()?;
     repo::set_laptop_status(laptop, status)?;
     assert_eq!(repo::check_out(laptop, borrower, due_in(7), ""), Err(error.into()));
@@ -56,6 +57,24 @@ fn laptops_out_of_service_cannot_be_lent(_fresh: (), #[case] status: &str, #[cas
 fn a_missing_laptop_cannot_be_lent(_fresh: ()) -> TestResult {
     let (_, borrower) = setup()?;
     assert_eq!(repo::check_out(99, borrower, due_in(7), ""), Err("That laptop no longer exists.".into()));
+    Ok(())
+}
+
+#[rstest]
+fn a_missing_borrower_cannot_borrow(_fresh: ()) -> TestResult {
+    let (laptop, _) = setup()?;
+    assert_eq!(repo::check_out(laptop, 99, due_in(7), ""), Err("That borrower no longer exists.".into()));
+    Ok(())
+}
+
+#[rstest]
+fn an_inactive_borrower_cannot_borrow(_fresh: ()) -> TestResult {
+    let (laptop, borrower) = setup()?;
+    repo::set_borrower_active(borrower, false)?;
+    assert_eq!(
+        repo::check_out(laptop, borrower, due_in(7), ""),
+        Err("Amara Okafor is inactive. Reactivate them first.".into())
+    );
     Ok(())
 }
 
@@ -99,12 +118,14 @@ fn a_condition_note_is_added_to_the_loan(
 }
 
 #[rstest]
-fn checking_in_twice_keeps_the_first_return(_fresh: ()) -> TestResult {
+fn checking_in_twice_is_refused_and_keeps_the_first_return(_fresh: ()) -> TestResult {
     let id = lend("LT-1", "Amara", 7)?;
     repo::check_in(id, "first")?;
+    let first = now();
     clock::advance(DAY);
-    let l = repo::check_in(id, "second")?;
-    assert_eq!((l.returned_at, l.note.as_str()), (Some(now()), "Returned: first"));
+    assert_eq!(repo::check_in(id, "second"), Err("LT-1 is already checked in.".into()));
+    let l = repo::loan(id).ok_or("missing")?;
+    assert_eq!((l.returned_at, l.note.as_str()), (Some(first), "Returned: first"));
     Ok(())
 }
 
@@ -144,6 +165,15 @@ fn renewing_clears_the_last_overdue_alert(_fresh: ()) -> TestResult {
 #[rstest]
 fn renewing_a_missing_loan_is_an_error(_fresh: ()) {
     assert_eq!(repo::renew(42, 7), Err("That loan no longer exists.".into()));
+}
+
+#[rstest]
+fn a_returned_loan_cannot_be_renewed(_fresh: ()) -> TestResult {
+    let id = lend("LT-1", "Amara", 7)?;
+    let before = repo::check_in(id, "")?;
+    assert_eq!(repo::renew(id, 7), Err("LT-1 is already checked in.".into()));
+    assert_eq!(repo::loan(id), Some(before));
+    Ok(())
 }
 
 // ---------------------------------------------------------------- listing
@@ -214,7 +244,7 @@ fn mark_notified_stamps_each_loan(_fresh: ()) -> TestResult {
     let b = lend("LT-2", "Liam", -1)?;
     let c = lend("LT-3", "Grace", -1)?;
     repo::mark_notified(&[a, b], at(2026, 10, 6, 11, 0));
-    let stamped = db::scalar("SELECT count(*) FROM loans WHERE last_notified_at = ?", json!([at(2026, 10, 6, 11, 0)]));
+    let stamped = db::scalar("SELECT count(*) FROM loans WHERE last_notified_at = ?", [at(2026, 10, 6, 11, 0)]);
     assert_eq!(stamped, 2);
     assert_eq!(repo::loan(c).ok_or("missing")?.last_notified_at, None);
     Ok(())

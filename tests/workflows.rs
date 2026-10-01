@@ -11,6 +11,7 @@ use laptop_checkout::{
     alerts::{self, AlertAction, AlertSink, Note},
     email,
     import::{ImportKind, Parsed, Tally},
+    models::ServiceStatus,
     repo,
     time::{self, clock, DAY},
     view_model::{self as vm, PickItem},
@@ -116,11 +117,11 @@ fn a_term_of_lending_from_import_to_return(_fresh: ()) -> TestResult {
 #[rstest]
 fn a_laptop_goes_for_repair_and_comes_back(_fresh: ()) -> TestResult {
     let id = repo::add_laptop(&common::machine("LT-7"))?;
-    repo::set_laptop_status(id, "repair")?;
+    repo::set_laptop_status(id, ServiceStatus::Repair)?;
     assert!(vm::available_laptop_items(&repo::laptops()).is_empty());
     let who = repo::add_borrower(&common::person("Liam Chen", "liam@example.org"))?;
     assert_eq!(repo::check_out(id, who, common::due_in(3), ""), Err("LT-7 is marked as in repair.".into()));
-    repo::set_laptop_status(id, "available")?;
+    repo::set_laptop_status(id, ServiceStatus::Available)?;
     assert_eq!(vm::available_laptop_items(&repo::laptops()).len(), 1);
     repo::check_out(id, who, common::due_in(3), "")?;
     Ok(())

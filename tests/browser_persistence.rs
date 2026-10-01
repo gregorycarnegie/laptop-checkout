@@ -17,7 +17,6 @@ use laptop_checkout::{
     web::{persistence, storage},
 };
 use leptos::prelude::*;
-use serde_json::json;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -30,10 +29,15 @@ struct Signals {
 /// A fresh browser, with the database connected to storage.
 async fn connected() -> Signals {
     fake::init_executor();
+    let s = Signals { rev: RwSignal::new(0), status: RwSignal::new(DbStatus::default()) };
+    // Drop the last test's pending saves and let a running one finish before
+    // clearing storage, or it lands in the next test's "fresh" browser.
+    persistence::connect(s.rev, s.status);
+    while s.status.get_untracked().saving {
+        fake::settle().await;
+    }
     storage::disconnect_file().await.unwrap();
     fake::delete_browser_database().await;
-    let s = Signals { rev: RwSignal::new(0), status: RwSignal::new(DbStatus::default()) };
-    persistence::connect(s.rev, s.status);
     assert!(persistence::init().await.unwrap(), "nothing saved yet");
     repo::migrate().unwrap();
     persistence::save_now().await;
@@ -92,7 +96,7 @@ async fn save_now_does_not_wait() {
 #[wasm_bindgen_test]
 async fn only_complete_changes_refresh_the_screen() {
     let s = connected().await;
-    db::exec_quiet("INSERT INTO settings (key, value) VALUES ('x', '1')", json!([])).unwrap();
+    db::exec_quiet("INSERT INTO settings (key, value) VALUES ('x', '1')", []).unwrap();
     assert_eq!(s.rev.get_untracked(), 0);
     add("Amara");
     assert_eq!(s.rev.get_untracked(), 1);

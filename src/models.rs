@@ -1,5 +1,6 @@
 //! Row types decoded from SQLite query results.
 
+use rusqlite::types::{ToSql, ToSqlOutput};
 use serde::Deserialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -38,13 +39,45 @@ pub struct Laptop {
     pub model: String,
     pub serial: String,
     pub notes: String,
-    /// `available`, `repair` or `retired`. Being on loan is worked out from `loans`.
-    pub status: String,
+    /// Being on loan is worked out from `loans`, not stored here.
+    pub status: ServiceStatus,
     pub loan_id: Option<i64>,
     pub due_at: Option<i64>,
     pub borrower_name: Option<String>,
     #[serde(default)]
     pub total_loans: i64,
+}
+
+/// Whether a laptop can be lent. Stored as text, matching the schema's CHECK.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceStatus {
+    #[default]
+    Available,
+    Repair,
+    Retired,
+}
+
+impl ServiceStatus {
+    pub const ALL: [ServiceStatus; 3] = [ServiceStatus::Available, ServiceStatus::Repair, ServiceStatus::Retired];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ServiceStatus::Available => "available",
+            ServiceStatus::Repair => "repair",
+            ServiceStatus::Retired => "retired",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.as_str() == s)
+    }
+}
+
+impl ToSql for ServiceStatus {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
 }
 
 impl Laptop {

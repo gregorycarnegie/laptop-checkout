@@ -9,10 +9,17 @@ when every test still passes, and **unviable** when the change doesn't compile.
 
 | Pass | Mutants | Caught | Unviable | Missed |
 | --- | ---: | ---: | ---: | ---: |
-| Core logic, native tests (`time`, `email`, `csv_import`, `db`, `repo`, `persist`, `alerts`, `view_model`, `import`, `models`) | 843 | 761 → **789** | 54 | 28 → **0** |
-| Browser code, headless Chrome (`web/`, `ui/`) | 116 | 108 → **109** | 7 | 1 → **0** |
+| Core logic, native tests (`time`, `email`, `csv_import`, `db`, `repo`, `persist`, `alerts`, `view_model`, `import`, `models`) | 859 | **799** | 60 | **0** |
+| Browser code, headless Chrome (`web/`, `ui/`) | 116 | **109** | 7 | **0** |
 
 **No missed mutants remain, so there are no equivalent survivors to explain.**
+These are from a full re-run after the review fixes (enforced foreign keys,
+typed query parameters, `ServiceStatus`, the `view_model/` split). Seven core
+mutants timed out on the first pass because the machine was also running the
+browser pass; re-run with `--iterate --timeout 300`, all seven were caught.
+
+The first run, before those fixes, had 843 core mutants (761 caught, 28
+missed) and 116 browser mutants (108 caught, 1 missed).
 The 28 core-logic survivors and the one browser survivor were all real gaps;
 each was closed by a new test (and a few by fixing code), then the affected
 functions were re-run until every mutant was caught.
@@ -38,6 +45,13 @@ instead, and that failure was counted as a catch. Flaky tests make mutation
 results look better than they are, so the tests now check that a specific
 toast is showing, the UI suites switch automatic alerts off, every browser
 suite passed three runs in a row, and the whole browser pass was re-run.
+
+The re-run hit the opposite problem: under load the unmutated baseline failed,
+so nothing was tested. A save timer left over from one persistence test fired
+after the next test had cleared IndexedDB, so that test found a "saved"
+database it never wrote. `persistence::connect` now starts a fresh save
+session, which makes earlier timers stale, and the test setup waits for a
+save that's already running before it clears storage.
 
 Other bugs found while building the suite (by fuzzing, property tests and
 browser tests rather than mutants): an arithmetic overflow for huge years in

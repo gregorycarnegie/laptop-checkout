@@ -25,7 +25,9 @@ thread_local! {
 }
 
 /// Routes database changes to saving (and `revision` bumps, which refresh queries).
+/// Saves scheduled before this are dropped.
 pub fn connect(revision: RwSignal<u64>, status: RwSignal<DbStatus>) {
+    SAVE.with_borrow_mut(SaveState::restart);
     REVISION.with(|r| r.set(Some(revision)));
     STATUS.with(|s| s.set(Some(status)));
     db::set_change_hook(|change| {

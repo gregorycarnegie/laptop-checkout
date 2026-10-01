@@ -54,6 +54,13 @@ impl SaveState {
         self.generation
     }
 
+    /// Starts over for a newly connected database. Tickets handed out before
+    /// go stale, so their timers can't save; a save already running still
+    /// counts until it finishes.
+    pub fn restart(&mut self) {
+        *self = SaveState { generation: self.generation + 1, saving: self.saving, ..SaveState::default() };
+    }
+
     pub fn is_latest(&self, ticket: u64) -> bool {
         ticket == self.generation
     }
@@ -199,6 +206,27 @@ mod tests {
         s.mark_dirty();
         s.finish(Ok(()), 5);
         assert!(s.has_unsaved());
+    }
+
+    #[test]
+    fn restarting_makes_earlier_tickets_stale() {
+        let mut s = SaveState::default();
+        let old = s.mark_dirty();
+        s.finish(Err("disk full".into()), 5);
+        s.restart();
+        assert!(!s.is_latest(old));
+        assert_eq!(s.status(FileInfo::default()), DbStatus::default());
+        let new = s.mark_dirty();
+        assert!(s.is_latest(new) && new > old);
+    }
+
+    #[test]
+    fn restarting_keeps_a_running_save() {
+        let mut s = SaveState::default();
+        s.mark_dirty();
+        s.begin();
+        s.restart();
+        assert!(s.status(FileInfo::default()).saving);
     }
 
     #[test]

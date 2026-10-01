@@ -4,7 +4,7 @@ use leptos::prelude::*;
 
 use crate::{
     import::ImportKind,
-    models::{Laptop, LaptopInput},
+    models::{Laptop, LaptopInput, ServiceStatus},
     repo,
     ui::{
         components::{Chips, ConfirmButton, DueStamp},
@@ -110,7 +110,7 @@ fn LaptopRow(laptop: Laptop, panel: RwSignal<Panel>) -> impl IntoView {
         vm::LaptopStatus::Retired => view! { <span class="pill">"Retired"</span> }.into_any(),
         vm::LaptopStatus::Shelf => view! { <span class="pill ok">"On the shelf"</span> }.into_any(),
     };
-    let current = laptop.status.clone();
+    let current = laptop.status;
     let on_loan = laptop.on_loan();
     let has_history = laptop.has_history();
     let tag = laptop.asset_tag.clone();
@@ -134,13 +134,14 @@ fn LaptopRow(laptop: Laptop, panel: RwSignal<Panel>) -> impl IntoView {
                         disabled=on_loan
                         title=if on_loan { "Check the laptop in before changing its status" } else { "Change status" }
                         on:change=move |ev| {
-                            let v = event_target_value(&ev);
-                            st.report(repo::set_laptop_status(id, &v), vm::status_message(&tag, &v));
+                            if let Some(v) = ServiceStatus::parse(&event_target_value(&ev)) {
+                                st.report(repo::set_laptop_status(id, v), vm::status_message(&tag, v));
+                            }
                         }
                     >
-                        <option value="available" selected=current == "available">"In service"</option>
-                        <option value="repair" selected=current == "repair">"In repair"</option>
-                        <option value="retired" selected=current == "retired">"Retired"</option>
+                        <option value="available" selected=current == ServiceStatus::Available>"In service"</option>
+                        <option value="repair" selected=current == ServiceStatus::Repair>"In repair"</option>
+                        <option value="retired" selected=current == ServiceStatus::Retired>"Retired"</option>
                     </select>
                     {(!has_history).then(|| view! {
                         <ConfirmButton

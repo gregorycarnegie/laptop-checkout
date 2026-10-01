@@ -1,7 +1,7 @@
 //! All SQL for the app: schema, queries and writes.
 
+use rusqlite::params;
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::{
     db::{self, exec, exec_quiet, query, query_one, scalar, transaction},
@@ -89,11 +89,11 @@ SELECT l.id, l.laptop_id, l.borrower_id, l.out_at, l.due_at, l.returned_at, l.no
 
 pub fn migrate() -> Result<(), String> {
     db::run_script(SCHEMA)?;
-    if scalar("SELECT count(*) AS n FROM email_templates", json!([])) == 0 {
+    if scalar("SELECT count(*) AS n FROM email_templates", []) == 0 {
         for t in email::default_templates() {
             exec_quiet(
                 "INSERT INTO email_templates (name, subject, body, purpose) VALUES (?, ?, ?, ?)",
-                json!([t.name, t.subject, t.body, t.purpose]),
+                params![t.name, t.subject, t.body, t.purpose],
             )?;
         }
     }
@@ -110,7 +110,7 @@ struct Kv {
 }
 
 pub fn settings() -> Settings {
-    let rows: Vec<Kv> = query("SELECT key, value FROM settings", json!([]));
+    let rows: Vec<Kv> = query("SELECT key, value FROM settings", []);
     let get = |k: &str| rows.iter().find(|r| r.key == k).map(|r| r.value.clone());
     Settings {
         org_name: get("org_name").unwrap_or_else(|| "IT Services".into()),
@@ -129,27 +129,28 @@ pub fn set_setting(key: &str, value: &str) -> Result<(), String> {
     exec(
         "INSERT INTO settings (key, value) VALUES (?, ?)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        json!([key, value]),
+        params![key, value],
     )
     .map(|_| ())
 }
 
 // ---------------------------------------------------------------- borrowers
 
+/// Borrowers with their loan counts; `?1` is now.
+const BORROWER_SELECT: &str = r#"
+SELECT b.*,
+       (SELECT count(*) FROM loans l WHERE l.borrower_id = b.id AND l.returned_at IS NULL) AS open_loans,
+       (SELECT count(*) FROM loans l WHERE l.borrower_id = b.id AND l.returned_at IS NULL AND l.due_at < ?1) AS late_loans,
+       (SELECT count(*) FROM loans l WHERE l.borrower_id = b.id) AS total_loans
+  FROM borrowers b
+"#;
+
 pub fn borrowers() -> Vec<Borrower> {
-    query(
-        r#"SELECT b.*,
-                  (SELECT count(*) FROM loans l WHERE l.borrower_id = b.id AND l.returned_at IS NULL) AS open_loans,
-                  (SELECT count(*) FROM loans l WHERE l.borrower_id = b.id AND l.returned_at IS NULL AND l.due_at < ?) AS late_loans,
-                  (SELECT count(*) FROM loans l WHERE l.borrower_id = b.id) AS total_loans
-             FROM borrowers b
-            ORDER BY b.active DESC, b.name COLLATE NOCASE"#,
-        json!([time::now()]),
-    )
+    query(&format!("{BORROWER_SELECT} ORDER BY b.active DESC, b.name COLLATE NOCASE"), [time::now()])
 }
 
 pub fn borrower(id: i64) -> Option<Borrower> {
-    borrowers().into_iter().find(|b| b.id == id)
+    query_one(&format!("{BORROWER_SELECT} WHERE b.id = ?2"), [time::now(), id])
 }
 
 fn clean_borrower(b: &BorrowerInput) -> Result<BorrowerInput, String> {
@@ -178,7 +179,7 @@ pub fn find_borrower_by_email(email: &str) -> Option<i64> {
     if email.trim().is_empty() {
         return None;
     }
-    query_one::<Id>("SELECT id FROM borrowers WHERE lower(email) = lower(?) LIMIT 1", json!([email.trim()]))
+    query_one::<Id>("SELECT id FROM borrowers WHERE lower(email) = lower(?) LIMIT 1", params![email.trim()])
         .map(|r| r.id)
 }
 
@@ -190,7 +191,7 @@ pub fn add_borrower(b: &BorrowerInput) -> Result<i64, String> {
     exec(
         "INSERT INTO borrowers (name, email, department, external_id, phone, notes, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
-        json!([b.name, b.email, b.department, b.external_id, b.phone, b.notes, time::now()]),
+        params![b.name, b.email, b.department, b.external_id, b.phone, b.notes, time::now()],
     )
     .map(|r| r.last_id)
 }
@@ -199,7 +200,7 @@ fn write_borrower(id: i64, b: &BorrowerInput) -> Result<(), String> {
     exec_quiet(
         "UPDATE borrowers SET name = ?, email = ?, department = ?, external_id = ?, phone = ?, notes = ?
          WHERE id = ?",
-        json!([b.name, b.email, b.department, b.external_id, b.phone, b.notes, id]),
+        params![b.name, b.email, b.department, b.external_id, b.phone, b.notes, id],
     )
     .map(|_| ())
 }
@@ -217,14 +218,14 @@ pub fn update_borrower(id: i64, b: &BorrowerInput) -> Result<(), String> {
 }
 
 pub fn set_borrower_active(id: i64, active: bool) -> Result<(), String> {
-    exec("UPDATE borrowers SET active = ? WHERE id = ?", json!([active as i64, id])).map(|_| ())
+    exec("UPDATE borrowers SET active = ? WHERE id = ?", params![active, id]).map(|_| ())
 }
 
 pub fn delete_borrower(id: i64) -> Result<(), String> {
-    if scalar("SELECT count(*) AS n FROM loans WHERE borrower_id = ?", json!([id])) > 0 {
+    if scalar("SELECT count(*) AS n FROM loans WHERE borrower_id = ?", params![id]) > 0 {
         return Err("This borrower has loan history, so they can only be deactivated.".into());
     }
-    exec("DELETE FROM borrowers WHERE id = ?", json!([id])).map(|_| ())
+    exec("DELETE FROM borrowers WHERE id = ?", params![id]).map(|_| ())
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
@@ -255,7 +256,7 @@ pub fn import_borrowers(rows: &[BorrowerInput], update_existing: bool) -> Result
                     exec_quiet(
                         "INSERT INTO borrowers (name, email, department, external_id, phone, notes, created_at)
                          VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        json!([b.name, b.email, b.department, b.external_id, b.phone, b.notes, now]),
+                        params![b.name, b.email, b.department, b.external_id, b.phone, b.notes, now],
                     )?;
                     r.added += 1;
                 }
@@ -267,21 +268,21 @@ pub fn import_borrowers(rows: &[BorrowerInput], update_existing: bool) -> Result
 
 // ---------------------------------------------------------------- laptops
 
+const LAPTOP_SELECT: &str = r#"
+SELECT lp.id, lp.asset_tag, lp.model, lp.serial, lp.notes, lp.status,
+       l.id AS loan_id, l.due_at, b.name AS borrower_name,
+       (SELECT count(*) FROM loans x WHERE x.laptop_id = lp.id) AS total_loans
+  FROM laptops lp
+  LEFT JOIN loans l ON l.laptop_id = lp.id AND l.returned_at IS NULL
+  LEFT JOIN borrowers b ON b.id = l.borrower_id
+"#;
+
 pub fn laptops() -> Vec<Laptop> {
-    query(
-        r#"SELECT lp.id, lp.asset_tag, lp.model, lp.serial, lp.notes, lp.status,
-                  l.id AS loan_id, l.due_at, b.name AS borrower_name,
-                  (SELECT count(*) FROM loans x WHERE x.laptop_id = lp.id) AS total_loans
-             FROM laptops lp
-             LEFT JOIN loans l ON l.laptop_id = lp.id AND l.returned_at IS NULL
-             LEFT JOIN borrowers b ON b.id = l.borrower_id
-            ORDER BY lp.asset_tag COLLATE NOCASE"#,
-        json!([]),
-    )
+    query(&format!("{LAPTOP_SELECT} ORDER BY lp.asset_tag COLLATE NOCASE"), [])
 }
 
 pub fn laptop(id: i64) -> Option<Laptop> {
-    laptops().into_iter().find(|l| l.id == id)
+    query_one(&format!("{LAPTOP_SELECT} WHERE lp.id = ?"), [id])
 }
 
 fn clean_laptop(l: &LaptopInput) -> Result<LaptopInput, String> {
@@ -302,7 +303,7 @@ pub fn find_laptop_by_tag(tag: &str) -> Option<i64> {
     struct Id {
         id: i64,
     }
-    query_one::<Id>("SELECT id FROM laptops WHERE asset_tag = ? COLLATE NOCASE", json!([tag.trim()])).map(|r| r.id)
+    query_one::<Id>("SELECT id FROM laptops WHERE asset_tag = ? COLLATE NOCASE", params![tag.trim()]).map(|r| r.id)
 }
 
 pub fn add_laptop(l: &LaptopInput) -> Result<i64, String> {
@@ -312,7 +313,7 @@ pub fn add_laptop(l: &LaptopInput) -> Result<i64, String> {
     }
     exec(
         "INSERT INTO laptops (asset_tag, model, serial, notes, created_at) VALUES (?, ?, ?, ?, ?)",
-        json!([l.asset_tag, l.model, l.serial, l.notes, time::now()]),
+        params![l.asset_tag, l.model, l.serial, l.notes, time::now()],
     )
     .map(|r| r.last_id)
 }
@@ -326,20 +327,20 @@ pub fn update_laptop(id: i64, l: &LaptopInput) -> Result<(), String> {
     }
     exec(
         "UPDATE laptops SET asset_tag = ?, model = ?, serial = ?, notes = ? WHERE id = ?",
-        json!([l.asset_tag, l.model, l.serial, l.notes, id]),
+        params![l.asset_tag, l.model, l.serial, l.notes, id],
     )
     .map(|_| ())
 }
 
-pub fn set_laptop_status(id: i64, status: &str) -> Result<(), String> {
-    exec("UPDATE laptops SET status = ? WHERE id = ?", json!([status, id])).map(|_| ())
+pub fn set_laptop_status(id: i64, status: ServiceStatus) -> Result<(), String> {
+    exec("UPDATE laptops SET status = ? WHERE id = ?", params![status, id]).map(|_| ())
 }
 
 pub fn delete_laptop(id: i64) -> Result<(), String> {
-    if scalar("SELECT count(*) AS n FROM loans WHERE laptop_id = ?", json!([id])) > 0 {
+    if scalar("SELECT count(*) AS n FROM loans WHERE laptop_id = ?", params![id]) > 0 {
         return Err("This laptop has loan history, so it can only be retired.".into());
     }
-    exec("DELETE FROM laptops WHERE id = ?", json!([id])).map(|_| ())
+    exec("DELETE FROM laptops WHERE id = ?", params![id]).map(|_| ())
 }
 
 pub fn import_laptops(rows: &[LaptopInput], update_existing: bool) -> Result<ImportResult, String> {
@@ -355,7 +356,7 @@ pub fn import_laptops(rows: &[LaptopInput], update_existing: bool) -> Result<Imp
                 Some(id) if update_existing => {
                     exec_quiet(
                         "UPDATE laptops SET model = ?, serial = ?, notes = ? WHERE id = ?",
-                        json!([l.model, l.serial, l.notes, id]),
+                        params![l.model, l.serial, l.notes, id],
                     )?;
                     r.updated += 1;
                 }
@@ -363,7 +364,7 @@ pub fn import_laptops(rows: &[LaptopInput], update_existing: bool) -> Result<Imp
                 None => {
                     exec_quiet(
                         "INSERT INTO laptops (asset_tag, model, serial, notes, created_at) VALUES (?, ?, ?, ?, ?)",
-                        json!([l.asset_tag, l.model, l.serial, l.notes, now]),
+                        params![l.asset_tag, l.model, l.serial, l.notes, now],
                     )?;
                     r.added += 1;
                 }
@@ -376,41 +377,42 @@ pub fn import_laptops(rows: &[LaptopInput], update_existing: bool) -> Result<Imp
 // ---------------------------------------------------------------- loans
 
 pub fn open_loans() -> Vec<Loan> {
-    query(&format!("{LOAN_SELECT} WHERE l.returned_at IS NULL ORDER BY l.due_at"), json!([]))
+    query(&format!("{LOAN_SELECT} WHERE l.returned_at IS NULL ORDER BY l.due_at"), [])
 }
 
 pub fn all_loans() -> Vec<Loan> {
-    query(
-        &format!("{LOAN_SELECT} ORDER BY (l.returned_at IS NULL) DESC, coalesce(l.returned_at, l.due_at) DESC"),
-        json!([]),
-    )
+    query(&format!("{LOAN_SELECT} ORDER BY (l.returned_at IS NULL) DESC, coalesce(l.returned_at, l.due_at) DESC"), [])
 }
 
 pub fn loan(id: i64) -> Option<Loan> {
-    query_one(&format!("{LOAN_SELECT} WHERE l.id = ?"), json!([id]))
+    query_one(&format!("{LOAN_SELECT} WHERE l.id = ?"), params![id])
 }
 
 pub fn check_out(laptop_id: i64, borrower_id: i64, due_at: i64, note: &str) -> Result<i64, String> {
     #[derive(Deserialize)]
     struct State {
         asset_tag: String,
-        status: String,
+        status: ServiceStatus,
         open: i64,
     }
     let state: State = query_one(
         "SELECT asset_tag, status,
                 (SELECT count(*) FROM loans WHERE laptop_id = laptops.id AND returned_at IS NULL) AS open
            FROM laptops WHERE id = ?",
-        json!([laptop_id]),
+        params![laptop_id],
     )
     .ok_or("That laptop no longer exists.")?;
     if state.open > 0 {
         return Err(format!("{} is already checked out. Check it in first.", state.asset_tag));
     }
-    match state.status.as_str() {
-        "repair" => return Err(format!("{} is marked as in repair.", state.asset_tag)),
-        "retired" => return Err(format!("{} is retired.", state.asset_tag)),
-        _ => {}
+    match state.status {
+        ServiceStatus::Repair => return Err(format!("{} is marked as in repair.", state.asset_tag)),
+        ServiceStatus::Retired => return Err(format!("{} is retired.", state.asset_tag)),
+        ServiceStatus::Available => {}
+    }
+    let who = borrower(borrower_id).ok_or("That borrower no longer exists.")?;
+    if !who.is_active() {
+        return Err(format!("{} is inactive. Reactivate them first.", who.name));
     }
     let now = time::now();
     if due_at <= now {
@@ -418,12 +420,13 @@ pub fn check_out(laptop_id: i64, borrower_id: i64, due_at: i64, note: &str) -> R
     }
     exec(
         "INSERT INTO loans (laptop_id, borrower_id, out_at, due_at, note) VALUES (?, ?, ?, ?, ?)",
-        json!([laptop_id, borrower_id, now, due_at, note.trim()]),
+        params![laptop_id, borrower_id, now, due_at, note.trim()],
     )
     .map(|r| r.last_id)
 }
 
 pub fn check_in(loan_id: i64, note: &str) -> Result<Loan, String> {
+    open_loan(loan_id)?;
     let note = note.trim();
     exec(
         "UPDATE loans
@@ -432,20 +435,29 @@ pub fn check_in(loan_id: i64, note: &str) -> Result<Loan, String> {
                             WHEN note = '' THEN 'Returned: ' || ?
                             ELSE note || char(10) || 'Returned: ' || ? END
           WHERE id = ? AND returned_at IS NULL",
-        json!([time::now(), note, note, note, loan_id]),
+        params![time::now(), note, note, note, loan_id],
     )?;
     loan(loan_id).ok_or_else(|| "That loan no longer exists.".into())
+}
+
+/// The loan, if it's still out.
+fn open_loan(loan_id: i64) -> Result<Loan, String> {
+    let l = loan(loan_id).ok_or("That loan no longer exists.")?;
+    match l.returned_at {
+        Some(_) => Err(format!("{} is already checked in.", l.asset_tag)),
+        None => Ok(l),
+    }
 }
 
 /// Library-style renewal: the new due date counts from today or the old due
 /// date, whichever is later.
 pub fn renew(loan_id: i64, days: i64) -> Result<i64, String> {
-    let l = loan(loan_id).ok_or("That loan no longer exists.")?;
+    let l = open_loan(loan_id)?;
     let base = l.due_at.max(time::now());
     let due = time::end_of_day_after(base, days);
     exec(
         "UPDATE loans SET due_at = ?, renewals = renewals + 1, last_notified_at = NULL WHERE id = ?",
-        json!([due, loan_id]),
+        params![due, loan_id],
     )?;
     Ok(due)
 }
@@ -458,14 +470,14 @@ pub fn loans_needing_alert(now: i64, every_hours: i64) -> Vec<Loan> {
                AND (l.last_notified_at IS NULL OR l.last_notified_at < ?)
              ORDER BY l.due_at"
         ),
-        json!([now, now - every_hours.max(1) * HOUR]),
+        params![now, now - every_hours.max(1) * HOUR],
     )
 }
 
 pub fn mark_notified(ids: &[i64], now: i64) {
     let _ = transaction(|| {
         for id in ids {
-            exec_quiet("UPDATE loans SET last_notified_at = ? WHERE id = ?", json!([now, id]))?;
+            exec_quiet("UPDATE loans SET last_notified_at = ? WHERE id = ?", params![now, id])?;
         }
         Ok(())
     });
@@ -478,7 +490,7 @@ pub fn templates() -> Vec<Template> {
         "SELECT id, name, subject, body, purpose FROM email_templates
           ORDER BY CASE purpose WHEN 'overdue' THEN 0 WHEN 'reminder' THEN 1 WHEN 'receipt' THEN 2 ELSE 3 END,
                    name COLLATE NOCASE",
-        json!([]),
+        [],
     )
 }
 
@@ -492,19 +504,19 @@ pub fn save_template(id: Option<i64>, name: &str, subject: &str, body: &str, pur
     match id {
         Some(id) => exec(
             "UPDATE email_templates SET name = ?, subject = ?, body = ?, purpose = ? WHERE id = ?",
-            json!([name.trim(), subject, body, purpose, id]),
+            params![name.trim(), subject, body, purpose, id],
         )
         .map(|_| id),
         None => exec(
             "INSERT INTO email_templates (name, subject, body, purpose) VALUES (?, ?, ?, ?)",
-            json!([name.trim(), subject, body, purpose]),
+            params![name.trim(), subject, body, purpose],
         )
         .map(|r| r.last_id),
     }
 }
 
 pub fn delete_template(id: i64) -> Result<(), String> {
-    exec("DELETE FROM email_templates WHERE id = ?", json!([id])).map(|_| ())
+    exec("DELETE FROM email_templates WHERE id = ?", params![id]).map(|_| ())
 }
 
 pub fn restore_default_templates() -> Result<usize, String> {
@@ -516,7 +528,7 @@ pub fn restore_default_templates() -> Result<usize, String> {
         for t in missing {
             exec_quiet(
                 "INSERT INTO email_templates (name, subject, body, purpose) VALUES (?, ?, ?, ?)",
-                json!([t.name, t.subject, t.body, t.purpose]),
+                params![t.name, t.subject, t.body, t.purpose],
             )?;
         }
         Ok(n)
@@ -529,11 +541,11 @@ pub fn log_email(loan: &Loan, to: &str, subject: &str, template: &str) -> Result
         exec_quiet(
             "INSERT INTO email_log (loan_id, borrower_id, to_addr, subject, template, sent_at)
              VALUES (?, ?, ?, ?, ?, ?)",
-            json!([loan.id, loan.borrower_id, to, subject, template, now]),
+            params![loan.id, loan.borrower_id, to, subject, template, now],
         )?;
         exec_quiet(
             "UPDATE loans SET last_emailed_at = ?, emails_sent = emails_sent + 1 WHERE id = ?",
-            json!([now, loan.id]),
+            params![now, loan.id],
         )?;
         Ok(())
     })
@@ -548,7 +560,7 @@ pub fn email_log(limit: i64) -> Vec<EmailLogEntry> {
            LEFT JOIN loans l ON l.id = e.loan_id
            LEFT JOIN laptops lp ON lp.id = l.laptop_id
           ORDER BY e.sent_at DESC LIMIT ?",
-        json!([limit]),
+        params![limit],
     )
 }
 
@@ -582,23 +594,24 @@ pub fn seed_sample() -> Result<(), String> {
         ("Aisha Begum", "aisha.begum@example.org", "Library", "T0455"),
         ("Jack Thornton", "jack.thornton@example.org", "Year 13", "S19633"),
     ];
-    const LAPTOPS: &[(&str, &str, &str, &str)] = &[
-        ("LT-0101", "Dell Latitude 3440", "7HQ2ZK3", "available"),
-        ("LT-0102", "Dell Latitude 3440", "7HQ5XB3", "available"),
-        ("LT-0103", "Lenovo ThinkPad E14 Gen 5", "PF4A9K2M", "available"),
-        ("LT-0104", "Lenovo ThinkPad E14 Gen 5", "PF4A9K7Q", "available"),
-        ("LT-0105", "HP ProBook 440 G10", "5CD3127XJN", "available"),
-        ("LT-0106", "HP ProBook 440 G10", "5CD3127XKQ", "repair"),
-        ("LT-0107", "Apple MacBook Air 13\" M2", "C02HM4KQ1WFV", "available"),
-        ("LT-0108", "Apple MacBook Air 13\" M2", "C02HM4KR2WFV", "available"),
-        ("LT-0109", "Acer Chromebook Spin 514", "NXK6JEK00123", "available"),
-        ("LT-0110", "Acer Chromebook Spin 514", "NXK6JEK00157", "available"),
-        ("LT-0111", "Dell Latitude 5440", "9JR1MV3", "available"),
-        ("LT-0112", "Dell Latitude 5440", "9JR4NV3", "available"),
-        ("LT-0113", "Microsoft Surface Laptop Go 3", "0F21AB34567", "available"),
-        ("LT-0114", "Microsoft Surface Laptop Go 3", "0F21AB34612", "available"),
-        ("LT-0115", "HP ProBook 440 G8", "5CD1044PLM", "retired"),
-        ("LT-0116", "Lenovo ThinkPad E14 Gen 5", "PF4A9L0C", "available"),
+    use ServiceStatus::{Available, Repair, Retired};
+    const LAPTOPS: &[(&str, &str, &str, ServiceStatus)] = &[
+        ("LT-0101", "Dell Latitude 3440", "7HQ2ZK3", Available),
+        ("LT-0102", "Dell Latitude 3440", "7HQ5XB3", Available),
+        ("LT-0103", "Lenovo ThinkPad E14 Gen 5", "PF4A9K2M", Available),
+        ("LT-0104", "Lenovo ThinkPad E14 Gen 5", "PF4A9K7Q", Available),
+        ("LT-0105", "HP ProBook 440 G10", "5CD3127XJN", Available),
+        ("LT-0106", "HP ProBook 440 G10", "5CD3127XKQ", Repair),
+        ("LT-0107", "Apple MacBook Air 13\" M2", "C02HM4KQ1WFV", Available),
+        ("LT-0108", "Apple MacBook Air 13\" M2", "C02HM4KR2WFV", Available),
+        ("LT-0109", "Acer Chromebook Spin 514", "NXK6JEK00123", Available),
+        ("LT-0110", "Acer Chromebook Spin 514", "NXK6JEK00157", Available),
+        ("LT-0111", "Dell Latitude 5440", "9JR1MV3", Available),
+        ("LT-0112", "Dell Latitude 5440", "9JR4NV3", Available),
+        ("LT-0113", "Microsoft Surface Laptop Go 3", "0F21AB34567", Available),
+        ("LT-0114", "Microsoft Surface Laptop Go 3", "0F21AB34612", Available),
+        ("LT-0115", "HP ProBook 440 G8", "5CD1044PLM", Retired),
+        ("LT-0116", "Lenovo ThinkPad E14 Gen 5", "PF4A9L0C", Available),
     ];
     /// A loan in the example data, with days counted from today.
     struct SampleLoan {
@@ -666,7 +679,7 @@ pub fn seed_sample() -> Result<(), String> {
         for (name, email, dept, ext) in PEOPLE {
             let r = exec_quiet(
                 "INSERT INTO borrowers (name, email, department, external_id, created_at) VALUES (?, ?, ?, ?, ?)",
-                json!([name, email, dept, ext, now - 40 * DAY]),
+                params![name, email, dept, ext, now - 40 * DAY],
             )?;
             people.push(r.last_id);
         }
@@ -674,7 +687,7 @@ pub fn seed_sample() -> Result<(), String> {
         for (tag, model, serial, status) in LAPTOPS {
             let r = exec_quiet(
                 "INSERT INTO laptops (asset_tag, model, serial, status, created_at) VALUES (?, ?, ?, ?, ?)",
-                json!([tag, model, serial, status, now - 60 * DAY]),
+                params![tag, model, serial, status, now - 60 * DAY],
             )?;
             machines.push(r.last_id);
         }
@@ -694,10 +707,10 @@ pub fn seed_sample() -> Result<(), String> {
             exec_quiet(
                 "INSERT INTO loans (laptop_id, borrower_id, out_at, due_at, returned_at, last_emailed_at, emails_sent)
                  VALUES (?, ?, ?, ?, ?, ?, ?)",
-                json!([machines[lap], people[who], out, due, returned, emailed, emails]),
+                params![machines[lap], people[who], out, due, returned, emailed, emails],
             )?;
         }
-        exec_quiet("INSERT OR REPLACE INTO settings (key, value) VALUES ('sample_data', '1')", json!([]))?;
+        exec_quiet("INSERT OR REPLACE INTO settings (key, value) VALUES ('sample_data', '1')", [])?;
         Ok(())
     })
 }

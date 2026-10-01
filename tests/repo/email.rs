@@ -1,7 +1,6 @@
 use laptop_checkout::{db, email, repo, time::clock};
 use pretty_assertions::assert_eq;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::common::{fresh, lend, now, TestResult};
 
@@ -101,6 +100,6 @@ fn a_failed_log_changes_nothing(_fresh: ()) -> TestResult {
     let loan = repo::loan(id).ok_or("missing")?;
     db::run_script("DROP TABLE email_log")?;
     assert!(repo::log_email(&loan, "a@b.org", "s", "t").is_err());
-    assert_eq!(db::scalar("SELECT emails_sent FROM loans WHERE id = ?", json!([id])), 0);
+    assert_eq!(db::scalar("SELECT emails_sent FROM loans WHERE id = ?", [id]), 0);
     Ok(())
 }

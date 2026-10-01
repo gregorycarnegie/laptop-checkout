@@ -4,7 +4,6 @@ use laptop_checkout::{
 };
 use pretty_assertions::assert_eq;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::common::{fresh, now, seeded, TestResult};
 
@@ -36,7 +35,7 @@ fn clearing_records_keeps_templates_and_settings(_seeded: ()) -> TestResult {
     repo::set_setting("org_name", "Hillside")?;
     repo::clear_records()?;
     for table in ["borrowers", "laptops", "loans", "email_log"] {
-        assert_eq!(db::scalar(&format!("SELECT count(*) FROM {table}"), json!([])), 0, "{table}");
+        assert_eq!(db::scalar(&format!("SELECT count(*) FROM {table}"), []), 0, "{table}");
     }
     assert_eq!(repo::templates().len(), 4);
     let s = repo::settings();
@@ -60,7 +59,7 @@ fn migrating_twice_is_harmless(_fresh: ()) -> TestResult {
 fn one_open_loan_per_laptop_is_enforced_by_the_database(_seeded: ()) {
     let r = db::exec(
         "INSERT INTO loans (laptop_id, borrower_id, out_at, due_at) SELECT laptop_id, borrower_id, 0, 1 FROM loans WHERE returned_at IS NULL LIMIT 1",
-        json!([]),
+        [],
     );
     assert!(r.is_err());
 }

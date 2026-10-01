@@ -1,5 +1,6 @@
 use laptop_checkout::{
-    models::{Laptop, LaptopInput},
+    db,
+    models::{Laptop, LaptopInput, ServiceStatus},
     repo::{self, ImportResult},
 };
 use pretty_assertions::assert_eq;
@@ -27,7 +28,7 @@ fn adding_a_laptop_trims_its_details(_fresh: ()) -> TestResult {
             model: "Dell".into(),
             serial: "SN1".into(),
             notes: "dock".into(),
-            status: "available".into(),
+            status: ServiceStatus::Available,
             loan_id: None,
             due_at: None,
             borrower_name: None,
@@ -118,10 +119,10 @@ fn an_update_cannot_take_another_laptops_tag(_fresh: ()) -> TestResult {
 }
 
 #[rstest]
-#[case("repair")]
-#[case("retired")]
-#[case("available")]
-fn a_laptop_status_can_be_set(_fresh: (), #[case] status: &str) -> TestResult {
+#[case(ServiceStatus::Repair)]
+#[case(ServiceStatus::Retired)]
+#[case(ServiceStatus::Available)]
+fn a_laptop_status_can_be_set(_fresh: (), #[case] status: ServiceStatus) -> TestResult {
     let id = repo::add_laptop(&machine("LT-1"))?;
     repo::set_laptop_status(id, status)?;
     assert_eq!(tagged("LT-1").unwrap().status, status);
@@ -131,7 +132,8 @@ fn a_laptop_status_can_be_set(_fresh: (), #[case] status: &str) -> TestResult {
 #[rstest]
 fn an_unknown_status_is_refused_by_the_database(_fresh: ()) -> TestResult {
     let id = repo::add_laptop(&machine("LT-1"))?;
-    assert!(repo::set_laptop_status(id, "lost").is_err());
+    assert!(db::exec("UPDATE laptops SET status = 'lost' WHERE id = ?", [id]).is_err());
+    assert_eq!(ServiceStatus::parse("lost"), None);
     Ok(())
 }
 
