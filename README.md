@@ -39,6 +39,83 @@ sent to a server.
 - **Laptops** – inventory with status (in service / in repair / retired), CSV import,
   and loan history counts.
 
+## Getting started
+
+1. **Open the app** in Chrome or Edge on the PC at your desk. There's nothing to
+   install.
+2. **Remove the example data.** The first time it opens, the app fills itself with
+   example borrowers, laptops and loans so you can try it out. When you're ready,
+   go to **Settings → Start fresh → Remove the example data**. Your templates and
+   settings stay.
+3. **Fill in Settings**: organisation name, sender name, where laptops are
+   returned, the default loan length, and which email app to use (default mail
+   app, Outlook on the web, Outlook.com or Gmail).
+4. **Save to a file**: **Settings → Save to a new file…**, somewhere that's backed
+   up. Without it, the data lives only in this browser's storage (see
+   [Where the data lives](#where-the-data-lives)). Download a backup now and then
+   too.
+5. **Import your laptops and borrowers** from CSV (see below).
+6. **Lend and return** from the Desk. Scan or type an asset tag (USB barcode
+   scanners work), pick the borrower, choose a due date and check it out. Checking
+   in works the same way.
+
+## Importing from CSV
+
+Export from Excel, your MIS or your HR system as CSV. Commas, semicolons and tabs
+all work. Header names are matched loosely: case, spaces and punctuation are
+ignored, so `Email Address`, `email_address` and `EMAIL` are the same column.
+Before anything is saved, a preview flags bad rows and duplicates, and rows with
+problems are skipped.
+
+### Laptops
+
+Only the asset tag is required.
+
+```csv
+asset_tag,model,serial,notes
+LT-0201,Dell Latitude 3440,7HQ9ZK3,
+LT-0202,Dell Latitude 3440,7HQ9ZK4,Cracked lid
+```
+
+| Column | Also accepted |
+| --- | --- |
+| `asset_tag` | `asset`, `tag`, `asset number`, `asset id`, `device name`, `hostname`, `computer name`, `name` |
+| `model` | `make`, `make model`, `description`, `device`, `type` |
+| `serial` | `serial number`, `serial no`, `SN`, `service tag` |
+| `notes` | `note`, `comments`, `comment` |
+
+The asset tag is what you scan at the desk, so use whatever is printed on the
+barcode label.
+
+### Borrowers
+
+A name and an email address are required. Rows without a valid email are skipped;
+add those people one at a time instead, where email is optional.
+
+```csv
+name,email,department,id,phone,notes
+Amara Okafor,amara.okafor@school.org,Year 11,S20931,,
+Grace Whitfield,g.whitfield@school.org,English,T0388,07700 900123,
+```
+
+| Column | Also accepted |
+| --- | --- |
+| `name` | `full name`, `display name`, `student name`, `staff name`, `pupil name`, `borrower`; or `first name` (`forename`, `given name`, `preferred name`) and `last name` (`surname`, `family name`), which are joined |
+| `email` | `email address`, `mail`, `work email`, `school email`, `UPN`, `user principal name` |
+| `department` | `dept`, `form`, `class`, `year`, `year group`, `tutor group`, `homeroom`, `team`, `group`, `course` |
+| `id` | `student id`, `staff id`, `employee id`, `id number`, `card number`, `library card`, `barcode`, `admission number` |
+| `phone` | `mobile`, `telephone`, `tel`, `phone number` |
+| `notes` | `note`, `comments`, `comment` |
+
+Fill in `id` if you want to find people by ID card number at the desk.
+
+### Re-importing
+
+Tick **Update … already here** on the import screen to update existing records
+instead of skipping them. Laptops are matched by asset tag and borrowers by email,
+so you can re-import a fresh export each term. A file without a header row is read
+in the column order of the examples above, but a header row is safer.
+
 ## Where the data lives
 
 SQLite runs inside the WebAssembly bundle (rusqlite). After every change the
